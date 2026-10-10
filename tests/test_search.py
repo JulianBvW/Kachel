@@ -114,6 +114,36 @@ rows = search.results('fire', apps, scope='=')
 check('=: no apps, a problem instead', [r.kind for r in rows] == ['problem'], rows)
 check('=: nothing typed, nothing listed, a hint above',
       search.results('', apps, scope='=') == [] and search.header('', [], '=') == 'Rechnung eingeben')
+from datetime import date, datetime
+from kachel.files import FileHit
+recent = [FileHit('/home/t/Projekte/Kachel-Notizen.md', mtime=datetime(2026, 10, 10, 9).timestamp()),
+          FileHit('/home/t/fire/brief.txt', mtime=datetime(2026, 1, 14).timestamp()),
+          FileHit('/home/t/Notizen/lagerfire.txt', mtime=datetime(2026, 1, 14).timestamp()),
+          FileHit('/home/t/Bilder/firewall.png'),
+          FileHit('/home/t/anderes.txt')]
+rows = search.results('fire', apps, recent=recent, home='/home/t', today=date(2026, 10, 10))
+kinds = [(r.kind, r.title) for r in rows]
+check('strong files before the apps, the rest after them',
+      kinds[0] == ('file', 'firewall.png') and kinds[-1] == ('file', 'lagerfire.txt')
+      and ('file', 'anderes.txt') not in kinds and any(k == 'app' for k, _ in kinds), kinds)
+check('a file that fits only through its folder does not count here',
+      ('file', 'brief.txt') not in kinds, kinds)
+check('a file row: folder with ~ and the date',
+      rows[-1].subtitle == '~/Notizen · 14.01.2026'
+      and rows[-1].value == '/home/t/Notizen/lagerfire.txt', rows[-1])
+rows = search.results('notiz', apps, recent=recent, home='/home/t', today=date(2026, 10, 10))
+check('a word start in the middle of the name is strong too',
+      rows[0].title == 'Kachel-Notizen.md' and rows[0].subtitle == '~/Projekte · heute', rows[0])
+check('no recent files in @a', all(r.kind != 'file' for r in
+      search.results('fire', apps, scope='a', recent=recent)))
+check('only a type, no words: a count, not the recent list',
+      search.file_header('', 12) == 'Dateien · 12 Treffer')
+check('file header: running, recent, count, too many, none',
+      [search.file_header('x', 0, running=True), search.file_header('', 3, recent_only=True),
+       search.file_header('x', 37), search.file_header('x', 5000, truncated=True),
+       search.file_header('x', 0)]
+      == ['Suche läuft…', 'Dateien · zuletzt benutzt', 'Dateien · 37 Treffer',
+          'Dateien · mehr als 5000', 'Keine Dateien für „x“'])
 rows = search.results('pi', apps)
 check('pi alone in the plain search is a word, not a sum', all(r.kind != 'calc' for r in rows), rows)
 check('the web address is escaped',

@@ -20,13 +20,15 @@ import tomllib
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from . import config, layout
+from . import config, files, layout
 
 
 @dataclass
 class General:
     columns: int = config.COLUMNS
     height: int = config.HEIGHT
+    exclude: tuple = files.DEFAULT_EXCLUDE            # left out of @f
+    exclude_names: tuple = files.DEFAULT_EXCLUDE_NAMES
 
 
 @dataclass
@@ -106,8 +108,9 @@ class Rail:
 
 
 # The keys each table may have. Anything else is reported as a typo.
-GENERAL_KEYS = {'window'}
+GENERAL_KEYS = {'window', 'files'}
 WINDOW_KEYS = {'columns', 'height'}
+FILES_KEYS = {'exclude', 'exclude_names'}
 TILES_KEYS = {'groups', 'tile'}
 TILE_KEYS = {'group', 'app', 'name', 'icon', 'command', 'size', 'pos',
              'shortcut'}
@@ -130,6 +133,24 @@ GENERAL_SKELETON = '''\
 [window]
 columns = 2     # tile columns, 1-4; the width follows (1: 426, 2: 772 px)
 height  = 680   # 300-2000 px
+
+# What @f leaves out. Without this section, these defaults apply; to
+# change them, take out the # and edit -- each list replaces its default.
+#
+# [files]
+# exclude = [         # these folders and everything below them
+#   "/usr", "/var", "/etc", "/opt", "/boot", "/root", "/srv", "/snap",
+#   "/proc", "/sys", "/run", "/dev", "/timeshift", "/lost+found", "/cdrom",
+#   "~/.cache", "~/.local/share/Trash", "~/.local/share/Steam",
+#   "~/.local/share/flatpak", "~/.var/app", "~/.steam", "~/.wine",
+#   "~/.npm", "~/.cargo", "~/.rustup", "~/.gradle", "~/.m2", "~/.conda",
+#   "~/miniforge3", "~/.vscode", "~/.mozilla", "~/Games",
+#   "~/VirtualBox VMs",
+# ]
+# exclude_names = [   # folder names, wherever they turn up
+#   "node_modules", ".git", "__pycache__", ".venv", "venv", ".tox",
+#   ".mypy_cache", ".pytest_cache", "steamapps", "compatdata",
+# ]
 '''
 
 TILES_SKELETON = '''\
@@ -373,6 +394,21 @@ def parse_general(data, filename=config.GENERAL_FILE):
         messages.append(f'{filename}: height = {height!r} geht nicht, '
                         f'erlaubt ist {config.HEIGHT_MIN} bis '
                         f'{config.HEIGHT_MAX} -- es gilt {config.HEIGHT}')
+
+    section = data.get('files', {})
+    if not isinstance(section, dict):
+        messages.append(f'{filename}: [files] ist kein Abschnitt')
+        return general, messages
+    _unknown_keys(section, FILES_KEYS, f'{filename}, [files]', messages)
+    for key in ('exclude', 'exclude_names'):
+        if key not in section:
+            continue
+        value = section[key]
+        if isinstance(value, list) and all(isinstance(v, str) for v in value):
+            setattr(general, key, tuple(value))
+        else:
+            messages.append(f'{filename}: [files] {key} muss eine Liste von '
+                            'Text sein -- es gilt die Vorgabe')
     return general, messages
 
 

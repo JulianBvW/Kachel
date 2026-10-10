@@ -36,6 +36,26 @@ general, messages = settings.parse_general({'window': 3})
 check('[window] not a table', general.columns == 2 and messages, messages)
 general, messages = settings.parse_general({'window': {'colums': 3}})
 check('a misspelt key is reported', has(messages, '[window]', 'colums'), messages)
+general, messages = settings.parse_general({})
+check('[files] missing: the default exclude lists',
+      general.exclude[0] == '/usr' and '.git' in general.exclude_names)
+general, messages = settings.parse_general({'files': {'exclude': ['/data'], 'exclude_names': []}})
+check('[files] given: each list replaces its default',
+      (general.exclude, general.exclude_names, messages) == (('/data',), (), []))
+general, messages = settings.parse_general({'files': {'exclude': '/usr', 'exclude_name': []}})
+check('[files] wrong type and a typo are reported',
+      general.exclude[0] == '/usr' and len(general.exclude) > 1
+      and has(messages, 'exclude muss') and has(messages, 'exclude_name'), messages)
+general, messages = settings.parse_general({'files': 3})
+check('[files] not a table', has(messages, '[files]'), messages)
+general, messages = settings.parse_general(tomllib.loads(settings.GENERAL_SKELETON))
+check('the general skeleton reads without a message', messages == [], messages)
+block = settings.GENERAL_SKELETON.split('# [files]')[1]
+uncommented = '[files]' + '\n'.join(line[2:] for line in block.splitlines())
+general, messages = settings.parse_general(tomllib.loads(uncommented))
+check('the commented [files] block is exactly the default',
+      (general.exclude, general.exclude_names, messages)
+      == (settings.files.DEFAULT_EXCLUDE, settings.files.DEFAULT_EXCLUDE_NAMES, []), messages)
 general, messages = settings.parse_general({'windwo': {}})
 check('a misspelt table is reported', has(messages, 'windwo'), messages)
 

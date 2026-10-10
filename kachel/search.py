@@ -6,19 +6,18 @@ with what is on the wall. A scope pill narrows it: @a to the apps alone,
 '''
 
 import re
-import unicodedata
 import urllib.parse
 from dataclasses import dataclass
 
-from . import calc
+import os
+from datetime import date
+
+from . import calc, files
+from .text import normalize
 
 
 # -- matching --------------------------------------------------------------
 
-def normalize(text):
-    '''Lower case and without accents: 'Écran' and 'ecran' are the same.'''
-    decomposed = unicodedata.normalize('NFKD', (text or '').casefold())
-    return ''.join(c for c in decomposed if not unicodedata.combining(c))
 
 
 def _words(text):
@@ -100,11 +99,12 @@ def rank(query, apps):
 
 @dataclass
 class Result:
-    kind: str           # 'calc', 'app', 'web', or 'problem' (does nothing)
+    kind: str           # 'calc', 'app', 'web', 'file', or 'problem'
     title: str
     subtitle: str
     app: object = None  # for 'app'
-    value: str = None   # the number to copy, or the URL to open
+    value: str = None   # the number to copy, the URL, or the file's path
+    folder: bool = False   # for 'file': a folder, not a file
 
 
 def web_url(query):
@@ -112,13 +112,17 @@ def web_url(query):
         query.strip())
 
 
-def results(query, apps, scope=None, listed=()):
+def results(query, apps, scope=None, listed=(), recent=(), home=None,
+            today=None):
     '''The rows for `query` in `scope` (a query.Scope code, or None).
 
     '=': the calculator alone; what does not work says why.
     No scope: the sum first, then every app that fits -- no limit, the
     list loads them in portions -- and without a single hit a way on:
-    searching the web. 'a': apps only; with nothing typed, all of
+    searching the web. The recently used files (`recent`, FileHits) whose
+    name holds every word go along: those where every word starts a word
+    of the name before the apps, the rest after them. (Their folders do
+    not count here -- 'julian' would match every one of them.) 'a': apps only; with nothing typed, all of
     `listed` (the visible apps, sorted). 'w': one row, the web search;
     bangs like `!yt` simply go along in the query.
     '''
@@ -140,11 +144,19 @@ def results(query, apps, scope=None, listed=()):
         return [_app_row(app) for app in listed]
 
     rows = []
+    strong, weak = [], []
     if scope is None:
         answer = calc.calculate(query)
         if answer is not None:
             rows.append(Result('calc', f'= {answer}', text, value=answer))
+        words = files.words_of(query)
+        for hit in recent:
+            if words and files.name_matches(hit.path, words):
+                name = os.path.basename(hit.path)
+                (strong if files.strong(name, words) else weak).append(hit)
+    rows += [file_row(hit, home, today) for hit in strong]
     rows += [_app_row(app) for app in rank(query, apps)]
+    rows += [file_row(hit, home, today) for hit in weak]
     if not rows and text and scope is None:
         rows.append(Result('web', f'Im Web suchen: „{text}“',
                            'DuckDuckGo', value=web_url(query)))
@@ -153,6 +165,31 @@ def results(query, apps, scope=None, listed=()):
 
 def _app_row(app):
     return Result('app', app.name, app.description or 'App', app=app)
+
+
+def file_row(hit, home=None, today=None):
+    '''Name, and below it the folder with ~ and the date.'''
+    home = home or os.path.expanduser('~')
+    where = files.shown_dir(hit.path, home)
+    if hit.mtime is not None:
+        where += ' · ' + files.when(hit.mtime, today or date.today())
+    name = os.path.basename(hit.path.rstrip('/')) or hit.path
+    return Result('file', name, where, value=hit.path, folder=hit.folder)
+
+
+def file_header(query, count, running=False, truncated=False,
+                recent_only=False):
+    '''The line above the @f rows.'''
+    if running:
+        return 'Suche läuft…'
+    if recent_only:
+        return 'Dateien · zuletzt benutzt'
+    if truncated:
+        return f'Dateien · mehr als {count}'
+    if count == 0:
+        return f'Keine Dateien für „{query.strip()}“' if query.strip() \
+            else 'Keine Dateien'
+    return f'Dateien · {count} Treffer'
 
 
 def header(query, rows, scope=None):

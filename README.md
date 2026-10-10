@@ -56,7 +56,8 @@ Cinnamon only: the shortcut goes through Cinnamon's own keybindings.
 | `Ctrl+1` … `Ctrl+9` | run result 1 to 9 at once |
 | `@a␣` `@w␣` `=␣` | narrow the search to a scope (see below) |
 | `Tab` | take the highlighted `@` suggestion |
-| `Backspace` in an empty field | drop the scope pill |
+| `Backspace` in an empty field | drop the last pill |
+| `Ctrl+Enter`, Ctrl+click | show a file in its folder |
 | `Ctrl+Backspace` | clear the search and the pill, back to the tiles |
 
 Clicking anywhere else hides it too. Hidden is not closed: the service keeps
@@ -93,11 +94,26 @@ into a pill in front of the field; typing `@` alone lists the scopes.
 | Scope | |
 |---|---|
 | `@a` Apps | apps only, no calculator; with nothing typed, every app from A to Z |
+| `@f` Files | every file on the disk, through plocate (see below) |
 | `@w` Web | your words on DuckDuckGo; bangs work (`minecraft !yt`) |
 | `=` Calculator | at the very start: everything is a calculation |
 
-Click the pill, or press Backspace in the empty field, to drop it. Files
-(`@f`) are next.
+Click the pill, or press Backspace in the empty field, to drop it.
+
+**Files.** The plain search also shows your recently used files: those
+whose name starts with what you typed come before the apps, the rest after
+them. `@f` searches every file through `plocate` -- all words must appear
+in the path, names before folders, home before the rest, newer first. With
+nothing typed it lists the recent files. Narrow it with extra pills:
+`@type:pdf`, `@before:2025`, `@after:10.11.2025` (dates as `YYYY`,
+`MM.YYYY`, `DD.MM.YYYY` or `MM/DD/YYYY`; the date itself never counts, so
+`@before:2026` ends on 31.12.2025). Enter opens a file, Ctrl+Enter or
+Ctrl+click shows it in its folder.
+
+`plocate`'s database is updated once a day, so a file from this morning
+may only turn up tomorrow (`sudo updatedb` to hurry it) -- unless you
+opened it, then it is among the recent ones. System folders, caches and
+the like are left out; the list is in `kachel.toml` under `[files]`.
 
 ## All apps
 

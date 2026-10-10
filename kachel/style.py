@@ -285,6 +285,13 @@ button.kachel-pill:active {{
 button.kachel-pill:hover {{
   opacity: 0.8;
 }}
+button.kachel-pill.extra {{
+  background-color: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  color: #FFFFFF;
+  padding: 0 9px;
+  min-height: 24px;
+}}
 
 .kachel-suggestions {{
   background-color: rgba(44, 44, 48, 0.97);

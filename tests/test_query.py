@@ -17,7 +17,7 @@ check('in the middle, cursor behind it moves along',
       (scope.code, text, cursor) == ('w', 'foo bar', 7), (text, cursor))
 scope, text, cursor = query.take_pill('@W ', 3)
 check('case does not count', scope is not None and scope.code == 'w')
-for typed in ('@x ', 'a@b.de ', '@w', '@f ', '@before:2025 '):
+for typed in ('@x ', 'a@b.de ', '@w', '@ai ', '@before:2025 '):
     scope, text, _ = query.take_pill(typed, len(typed))
     check(f'{typed!r} stays text', scope is None and text == typed, scope)
 scope, text, _ = query.take_pill('@x @a hi', 8)
@@ -35,6 +35,19 @@ scope, text, _ = query.take_pill('= vs ==', 7, calc=False)
 check('= is text while another pill is there', scope is None and text == '= vs ==')
 check('and is never offered for @', all(s.code != '=' for s in query.suggestions('@')))
 
+section('take_extra')
+extra, text, cursor = query.take_extra('@type:pdf ', 10)
+check('@type:pdf + space: a type pill', (extra.kind, extra.label, text, cursor) == ('type', '.pdf', '', 0), extra)
+extra, text, _ = query.take_extra('rechnung @before:2026 ', 22)
+check('@before:2026 in the text: a date pill',
+      (extra.kind, extra.label, text) == ('before', 'vor 2026', 'rechnung '), extra)
+check('its period is the year', extra.period == query.files.parse_date('2026'))
+extra, _, _ = query.take_extra('@AFTER:10.11.2025 ', 18)
+check('after with a full date, any case', extra.label == 'nach 10.11.2025')
+for typed in ('@before:13.2025 ', '@after:abc ', '@type: ', '@type:a/b ', '@before:2025'):
+    extra, text, _ = query.take_extra(typed, len(typed))
+    check(f'{typed!r} stays text', extra is None and text == typed, extra)
+
 section('word_at')
 check('right behind a word', query.word_at('foo @w', 6) == (4, '@w'))
 check('inside a word', query.word_at('foo @web', 6) == (4, '@web'))
@@ -42,9 +55,20 @@ check('after a space: empty word', query.word_at('foo ', 4) == (4, ''))
 check('empty text', query.word_at('', 0) == (0, ''))
 
 section('suggestions')
-check('@ alone: every active scope', [s.code for s in query.suggestions('@')] == ['a', 'w'])
+check('@ alone: every active scope', [s.code for s in query.suggestions('@')] == ['f', 'a', 'w'])
 check('@w: only Web', [s.code for s in query.suggestions('@w')] == ['w'])
-check('@f: nothing yet (switched off)', query.suggestions('@f') == [])
+check('@f: the files', [s.code for s in query.suggestions('@f')] == ['f'])
+check('@ai: nothing yet (switched off)', query.suggestions('@ai') == [])
+files_scope = query.BY_CODE['f']
+check('with @f active, its extra pills come first',
+      [s.code for s in query.suggestions('@', files_scope)][:3] == ['type:', 'before:', 'after:'])
+check('@b with @f: only before:', [s.code for s in query.suggestions('@b', files_scope)] == ['before:'])
+check('extras are not offered without @f', all(':' not in s.code for s in query.suggestions('@')))
+before = query.EXTRAS[1]
+check('completing an extra leaves the cursor after the colon',
+      query.complete('@be', 3, before) == ('@before:', 8))
+check('... and keeps a following word apart',
+      query.complete('@be foo', 3, before) == ('@before: foo', 8))
 check('@before: nothing', query.suggestions('@before:') == [])
 check('no @: nothing', query.suggestions('w') == [])
 

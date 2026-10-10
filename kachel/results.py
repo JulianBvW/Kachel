@@ -5,7 +5,7 @@ import gi
 gi.require_version('Gtk', '3.0')
 gi.require_version('Gdk', '3.0')
 gi.require_version('Pango', '1.0')
-from gi.repository import Gdk, Gtk, Pango  # noqa: E402
+from gi.repository import Gdk, Gio, Gtk, Pango  # noqa: E402
 
 from . import icons  # noqa: E402
 
@@ -147,15 +147,16 @@ class ResultList(Gtk.Box):
     def move(self, delta):
         self.select(self._selected + delta)
 
-    def activate(self, index, timestamp):
-        '''Run row `index` (0-based). False if there is no such row.'''
+    def activate(self, index, timestamp, reveal=False):
+        '''Run row `index` (0-based). False if there is no such row.
+        `reveal`: for a file, show it in its folder instead of opening.'''
         if 0 <= index < len(self._results):
-            self._on_activate(self._results[index], timestamp)
+            self._on_activate(self._results[index], timestamp, reveal)
             return True
         return False
 
-    def activate_selected(self, timestamp):
-        return self.activate(self._selected, timestamp)
+    def activate_selected(self, timestamp, reveal=False):
+        return self.activate(self._selected, timestamp, reveal)
 
     def _pointer_position(self):
         seat = Gdk.Display.get_default().get_default_seat()
@@ -188,6 +189,9 @@ class ResultList(Gtk.Box):
         plate.set_valign(Gtk.Align.CENTER)
         if result.kind == 'app':
             glyph = icons.icon_widget(None, ICON, fallback=result.app.icon)
+        elif result.kind == 'file':
+            glyph = icons.icon_widget(None, ICON,
+                                      fallback=file_icon(result))
         else:
             glyph = icons.icon_widget(KIND_ICONS[result.kind], ICON)
         glyph.set_halign(Gtk.Align.CENTER)
@@ -219,5 +223,20 @@ class ResultList(Gtk.Box):
         row.add_events(Gdk.EventMask.POINTER_MOTION_MASK)
         row.connect('motion-notify-event', self._moved, index)
         row.connect('clicked', lambda *_: self.activate(
-            index, Gtk.get_current_event_time()))
+            index, Gtk.get_current_event_time(), reveal=ctrl_held()))
         return row
+
+
+def ctrl_held():
+    '''Was Ctrl down for the event being handled (a click)?'''
+    ok, state = Gtk.get_current_event_state()
+    return bool(ok and state & Gdk.ModifierType.CONTROL_MASK)
+
+
+def file_icon(result):
+    '''The icon for a file's type, guessed from its name -- no disk
+    access for a list of hundreds.'''
+    if result.folder:
+        return Gio.ThemedIcon.new('folder')
+    content_type, _uncertain = Gio.content_type_guess(result.value, None)
+    return Gio.content_type_get_icon(content_type)

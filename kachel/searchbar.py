@@ -17,8 +17,9 @@ LIST_BUTTON_SIZE = 34
 
 
 class SearchBar(Gtk.Box):
-    '''`on_changed(text, scope)` on every edit or change of the pill
-    (scope: a query.Scope or None), `on_word(word)` whenever the word at
+    '''`on_changed(text, scope, extras)` on every edit or change of a
+    pill (scope: a query.Scope or None; extras: the files scope's extra
+    pills, a tuple of query.Extra), `on_word(word)` whenever the word at
     the cursor may have changed, `on_close()` when the button is clicked
     with nothing left to clear, `on_list()` when the app list button on
     the right is clicked.'''
@@ -31,6 +32,7 @@ class SearchBar(Gtk.Box):
         self._on_close = on_close
         self._on_word = on_word or (lambda word: None)
         self._scope = None
+        self._extras = []
         self._taking = False   # while the text is rewritten for a pill
         self._took_pill = False
 
@@ -68,6 +70,11 @@ class SearchBar(Gtk.Box):
         self._pill.set_no_show_all(True)
         self.pack_start(self._pill, False, False, 0)
 
+        # The extra pills of the files scope, behind it.
+        self._extras_box = Gtk.Box(spacing=6)
+        self._extras_box.set_valign(Gtk.Align.CENTER)
+        self.pack_start(self._extras_box, False, False, 0)
+
         self._entry = Gtk.Entry()
         self._entry.get_style_context().add_class('kachel-search-entry')
         self._entry.set_has_frame(False)
@@ -101,6 +108,10 @@ class SearchBar(Gtk.Box):
         return self._scope
 
     @property
+    def extras(self):
+        return tuple(self._extras)
+
+    @property
     def word(self):
         '''The word at the cursor, for the suggestion list.'''
         return query.word_at(self.text, self._entry.get_position())[1]
@@ -125,6 +136,8 @@ class SearchBar(Gtk.Box):
         '''Show the pill for `scope`, or none.'''
         if scope == self._scope:
             return
+        if scope is None or scope.code != 'f':
+            self._set_extras([])   # they belong to the files scope
         context = self._pill.get_style_context()
         if self._scope is not None:
             context.remove_class(f'scope-{self._scope.css}')
@@ -145,14 +158,38 @@ class SearchBar(Gtk.Box):
         self._pill.show()
         self._entry.set_placeholder_text(PLACEHOLDER_SCOPED)
 
+    def _set_extras(self, extras):
+        self._extras = list(extras)
+        for child in self._extras_box.get_children():
+            self._extras_box.remove(child)
+            child.destroy()
+        for extra in self._extras:
+            pill = Gtk.Button(label=extra.label)
+            pill.set_relief(Gtk.ReliefStyle.NONE)
+            pill.set_can_focus(False)
+            pill.get_style_context().add_class('kachel-pill')
+            pill.get_style_context().add_class('extra')
+            pill.set_size_request(-1, PILL_HEIGHT)
+            pill.connect('clicked', lambda _b, e=extra: self._drop_extra(e))
+            self._extras_box.pack_start(pill, False, False, 0)
+        self._extras_box.show_all()
+
+    def _drop_extra(self, extra):
+        self._set_extras([e for e in self._extras if e is not extra])
+        self._notify()
+        self.focus()
+
+    def _notify(self):
+        self._on_changed(self.text, self._scope, self.extras)
+
     def clear(self):
-        '''Text and pill, both.'''
+        '''Text and pills, all of them.'''
         had_text = bool(self.text)
         self.set_scope(None)
         self._entry.set_text('')
         if not had_text:
-            # Only the pill went: no 'changed' to pass that on.
-            self._on_changed('', None)
+            # Only pills went: no 'changed' to pass that on.
+            self._notify()
 
     def reset(self):
         '''Empty, and the magnifier back: a hide while the pointer was on
@@ -173,33 +210,49 @@ class SearchBar(Gtk.Box):
     def _changed(self, entry):
         if self._taking:
             return
-        scope, text, cursor = query.take_pill(entry.get_text(),
-                                              entry.get_position(),
-                                              calc=self._scope is None)
-        if scope is not None:
+        text, cursor = entry.get_text(), entry.get_position()
+        took = False
+        while True:
+            scope, text, cursor = query.take_pill(text, cursor,
+                                                  calc=self._scope is None)
+            if scope is not None:
+                self.set_scope(scope)
+                took = True
+                continue
+            if self._scope is not None and self._scope.code == 'f':
+                extra, text, cursor = query.take_extra(text, cursor)
+                if extra is not None:
+                    self._set_extras(self._extras + [extra])
+                    took = True
+                    continue
+            break
+        if took:
             # Rewriting the text sends 'changed' again; that one is ours.
             self._taking = True
-            self.set_scope(scope)
             entry.set_text(text)
             entry.set_position(cursor)
             self._taking = False
             self._took_pill = True
-        self._on_changed(entry.get_text(), self._scope)
+        self._notify()
         self._on_word(self.word)
 
     def _drop_pill(self):
         self.set_scope(None)
-        self._on_changed(self.text, None)
+        self._notify()
         self._on_word(self.word)
         self.focus()
 
     def _key_pressed(self, entry, event):
-        '''Backspace in front of everything takes the pill away.'''
+        '''Backspace in front of everything takes a pill away: the last
+        extra pill first, then the scope (Design §11.5).'''
         if event.keyval == Gdk.KEY_BackSpace and self._scope is not None \
                 and entry.get_position() == 0 \
                 and not entry.get_selection_bounds() \
                 and not event.state & Gdk.ModifierType.CONTROL_MASK:
-            self._drop_pill()
+            if self._extras:
+                self._drop_extra(self._extras[-1])
+            else:
+                self._drop_pill()
             return True
         return False
 

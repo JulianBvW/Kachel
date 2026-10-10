@@ -51,6 +51,45 @@ def open_uri(uri, timestamp):
     return None
 
 
+def open_path(path, timestamp):
+    '''Open a file with its default app, a folder in the file manager.'''
+    return open_uri(Gio.File.new_for_path(path).get_uri(), timestamp)
+
+
+def show_in_folder(path, timestamp):
+    '''Open the folder `path` is in with `path` selected, through the
+    file manager's D-Bus interface (Nemo has it). If that does not
+    answer, just the folder. Asynchronous: never waits for the bus.'''
+    uri = Gio.File.new_for_path(path).get_uri()
+    folder = str(Path(path).parent)
+
+    def fallback():
+        open_path(folder, timestamp)
+
+    def called(bus, result):
+        try:
+            bus.call_finish(result)
+        except GLib.Error:
+            fallback()
+
+    def connected(_source, result):
+        try:
+            bus = Gio.bus_get_finish(result)
+        except GLib.Error:
+            fallback()
+            return
+        # The startup id carries the click's time, so the window manager
+        # lets the file manager come to the front.
+        bus.call('org.freedesktop.FileManager1',
+                 '/org/freedesktop/FileManager1',
+                 'org.freedesktop.FileManager1', 'ShowItems',
+                 GLib.Variant('(ass)', ([uri], f'_TIME{timestamp}')), None,
+                 Gio.DBusCallFlags.NONE, 3000, None, called)
+
+    Gio.bus_get(Gio.BusType.SESSION, None, connected)
+    return None
+
+
 # When the desktop names no terminal at all.
 FALLBACK_TERMINAL = ('x-terminal-emulator', '-e')
 TERMINAL_SCHEMA = 'org.cinnamon.desktop.default-applications.terminal'

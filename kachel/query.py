@@ -3,12 +3,17 @@
 An abbreviation followed by a space -- `@a ` or `@w ` -- turns into a pill
 and leaves the text; so does `= ` at the very start, for the calculator.
 Words starting with `@` that are not abbreviations (mail addresses, say)
-stay text. The abbreviations for the files, AI and tldr are known already
-but not switched on yet.
+stay text. The abbreviations for AI and tldr are known already but not
+switched on yet.
+
+With the files pill, `@type:pdf `, `@before:2025 ` and `@after:10.2026 `
+become extra pills that narrow the files further.
 '''
 
 import re
 from dataclasses import dataclass
+
+from . import files
 
 
 @dataclass(frozen=True)
@@ -30,7 +35,7 @@ class Scope:
 
 SCOPES = (
     Scope('f', 'Dateien', 'ms:description', 'Dateien und Ordner',
-          '#fdb171', '#411f00', active=False),
+          '#fdb171', '#411f00'),
     Scope('a', 'Apps', 'ms:apps', 'nur installierte Apps',
           '#86caff', '#072a4a'),
     Scope('w', 'Web', 'ms:public', 'mit DuckDuckGo im Web suchen',
@@ -49,6 +54,62 @@ BY_CODE = {scope.code: scope for scope in SCOPES
 
 # @code followed by whitespace, at the start or after whitespace.
 PILL = re.compile(r'(^|(?<=\s))@(\w+)\s')
+
+# The extra pills of the files scope, offered in the suggestions like the
+# scopes. Their code ends in ':' -- a value follows, not a space.
+EXTRAS = (
+    Scope('type:', 'Typ', 'ms:draft', 'nur diese Endung, z. B. @type:pdf',
+          '', ''),
+    Scope('before:', 'vor', 'ms:history',
+          'geändert vor …, z. B. @before:2025', '', ''),
+    Scope('after:', 'nach', 'ms:update',
+          'geändert nach …, z. B. @after:10.2026', '', ''),
+)
+EXTRA = re.compile(r'(^|(?<=\s))@(type|before|after):(\S+)\s', re.IGNORECASE)
+
+
+@dataclass(frozen=True)
+class Extra:
+    '''An extra pill: a file type or a date bound.'''
+    kind: str              # 'type', 'before' or 'after'
+    value: str             # as typed: 'pdf', '2025', '10.11.2025'
+    period: tuple = None   # (start, end) for the dates
+
+    @property
+    def label(self):
+        if self.kind == 'type':
+            return '.' + self.value.lower().lstrip('.')
+        return ('vor ' if self.kind == 'before' else 'nach ') + self.value
+
+
+def make_extra(kind, value):
+    '''An Extra, or None when the value does not work (no real date, or
+    an ending with a slash in it).'''
+    kind = kind.lower()
+    if kind == 'type':
+        value = value.lstrip('.')
+        if not value or '/' in value:
+            return None
+        return Extra('type', value)
+    period = files.parse_date(value)
+    return Extra(kind, value, period) if period else None
+
+
+def take_extra(text, cursor):
+    '''Like take_pill, for @type:, @before: and @after: followed by a
+    space. A value that does not work stays text.'''
+    for match in EXTRA.finditer(text):
+        extra = make_extra(match[2], match[3])
+        if extra is None:
+            continue
+        start, end = match.start(2) - 1, match.end()
+        rest = text[:start] + text[end:]
+        if cursor >= end:
+            cursor -= end - start
+        elif cursor > start:
+            cursor = start
+        return extra, rest, cursor
+    return None, text, cursor
 
 
 def take_pill(text, cursor, calc=True):
@@ -85,15 +146,17 @@ def word_at(text, cursor):
     return start, text[start:end]
 
 
-def suggestions(word):
-    '''The scopes to offer for the word at the cursor: those whose code
-    starts with what follows the @. Nothing for a word without @, or
-    one with a ':' (that is an extra pill like @before:2025, later).'''
+def suggestions(word, scope=None):
+    '''What to offer for the word at the cursor: the scopes whose code
+    starts with what follows the @, and with the files scope active its
+    extra pills first. Nothing for a word without @, or once a ':' is
+    typed (the value comes then).'''
     if not word.startswith('@') or ':' in word:
         return []
     typed = word[1:].lower()
-    return [scope for scope in BY_CODE.values()
-            if scope.code.startswith(typed)]
+    offer = list(EXTRAS) if scope is not None and scope.code == 'f' else []
+    offer += BY_CODE.values()
+    return [s for s in offer if s.code.startswith(typed)]
 
 
 def complete(text, cursor, scope):
@@ -101,6 +164,8 @@ def complete(text, cursor, scope):
     The space makes take_pill turn it into the pill right away.'''
     start, word = word_at(text, cursor)
     end = start + len(word)
-    inserted = f'@{scope.code} '
-    rest = text[end:].lstrip(' ')
+    # An extra pill wants its value next, right after the colon.
+    space = '' if scope.code.endswith(':') else ' '
+    inserted = f'{scope.prefix}{scope.code}{space}'
+    rest = text[end:].lstrip(' ') if space else text[end:]
     return text[:start] + inserted + rest, start + len(inserted)

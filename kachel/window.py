@@ -11,10 +11,11 @@ gi.require_version('Gtk', '3.0')
 gi.require_version('Gdk', '3.0')
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from . import (blur, config, geometry, icons, launch,  # noqa: E402
-               listmodel, query, railmodel, search, settings, style)
+from . import (blur, config, files, geometry, icons,  # noqa: E402
+               launch, listmodel, query, railmodel, search, settings, style)
 from .applist import AppList  # noqa: E402
 from .apps import AppIndex  # noqa: E402
+from .filesearch import FileSearch, Recent  # noqa: E402
 from .rail import Rail  # noqa: E402
 from .results import ResultList  # noqa: E402
 from .searchbar import SearchBar  # noqa: E402
@@ -103,6 +104,10 @@ class KachelWindow(Gtk.Window):
         Gtk.Settings.get_default().connect(
             'notify::gtk-fontconfig-timestamp', self._on_fontconfig_changed)
         self._apps = AppIndex()
+        self._recent = Recent()
+        self._files = FileSearch(on_done=self._on_files, verbose=verbose)
+        self._file_source = None   # the pause before plocate starts
+        self._file_query = ('', (), ())   # text, recent hits shown, extras
         self._general = settings.General()
         self._wall_settings = settings.Wall()
         self._rail_settings = settings.default_rail()
@@ -339,25 +344,100 @@ class KachelWindow(Gtk.Window):
             self.show_kachel()
         self.searchbar.set_text(text)
 
-    def _on_search_changed(self, text, scope=None):
+    def _on_search_changed(self, text, scope=None, extras=()):
+        self._stop_files()
         if not text.strip() and scope is None:
             self._body.set_visible_child_name('main')
             return
         t0 = time.monotonic()
         code = scope.code if scope else None
+        if code == 'f':
+            self._search_files(text, extras)
+            return
         # The sorted list is only needed for @a with nothing typed.
         listed = self._apps.visible() if code == 'a' and not text.strip() \
             else ()
+        recent = self._recent.hits() if code is None else ()
         rows = search.results(text, self._apps.apps.values(), code,
-                              listed=listed)
+                              listed=listed, recent=recent)
         self.results.show_results(rows, search.header(text, rows, code))
         self._body.set_visible_child_name('results')
         self._log(f'search {text!r}: {len(rows)} rows in '
                   f'{(time.monotonic() - t0) * 1000:.1f} ms')
 
+    # -- files -----------------------------------------------------------
+
+    FILE_PAUSE_MS = 120
+
+    def _search_files(self, text, extras):
+        '''@f: the recent files that fit at once, plocate after a pause.
+
+        With neither words nor a type, only the recent files: a date bound
+        alone would have every file on the disk looked at.'''
+        words = files.words_of(text)
+        types = [e.value for e in extras if e.kind == 'type']
+        before = next((e.period for e in reversed(extras)
+                       if e.kind == 'before'), None)
+        after = next((e.period for e in reversed(extras)
+                      if e.kind == 'after'), None)
+        recent = [hit for hit in self._recent.hits()
+                  if files.matches(hit.path, words)
+                  and files.has_type(hit.path, types)
+                  and files.date_ok(hit.mtime, before, after)]
+        if not words and not types:
+            rows = [search.file_row(hit) for hit in recent]
+            self.results.show_results(rows, search.file_header(
+                '', len(rows), recent_only=True))
+            self._body.set_visible_child_name('results')
+            return
+        # The recent ones in the same order as everything else: a name
+        # that fits before a path that does.
+        recent = files.rank(recent, words, Path.home())
+        rows = [search.file_row(hit) for hit in recent]
+        self._file_query = (text, recent, extras)
+        self.results.show_results(rows, search.file_header(text, 0,
+                                                           running=True))
+        self._body.set_visible_child_name('results')
+        excluder = files.Excluder(self._general.exclude,
+                                  self._general.exclude_names)
+
+        def start():
+            self._file_source = None
+            self._files.start(text.split(), words, types, before, after,
+                              excluder, Path.home())
+            return GLib.SOURCE_REMOVE
+        self._file_source = GLib.timeout_add(self.FILE_PAUSE_MS, start)
+
+    def _stop_files(self):
+        if self._file_source is not None:
+            GLib.source_remove(self._file_source)
+            self._file_source = None
+        self._files.cancel()
+
+    def _on_files(self, hits, truncated, problem):
+        '''plocate has answered the latest search.'''
+        text, recent, _extras = self._file_query
+        if problem:
+            # Keep the recent ones that were shown; say what is missing.
+            rows = [search.file_row(hit) for hit in recent]
+            rows.append(search.Result('problem', problem, ''))
+            self.results.show_results(rows, problem)
+            return
+        seen = {hit.path for hit in recent}
+        words = files.words_of(text)
+        merged = files.rank(
+            list(recent) + [hit for hit in hits if hit.path not in seen],
+            words, Path.home())
+        rows = [search.file_row(hit) for hit in merged]
+        self.results.show_results(rows, search.file_header(
+            text, len(rows), truncated=truncated))
+        self._log(f'files {text!r}: {len(rows)} rows')
+
     def _on_word(self, word):
-        '''The word at the cursor changed: offer scopes for an @word.'''
-        self.suggestions.show_for(query.suggestions(word))
+        '''The word at the cursor changed: offer scopes for an @word,
+        and with @f its extra pills.'''
+        self.suggestions.show_for(query.suggestions(word,
+                                                    self.searchbar.scope))
 
     def _on_pick(self, scope):
         self.suggestions.hide_list()
@@ -391,11 +471,15 @@ class KachelWindow(Gtk.Window):
             self._log(f'ran {what!r}')
         self.hide_kachel()
 
-    def _on_result(self, result, timestamp):
-        '''A result row was chosen: start, copy or open, then go away.'''
+    def _on_result(self, result, timestamp, reveal=False):
+        '''A result row was chosen: start, copy or open, then go away.
+        `reveal` (Ctrl): show a file in its folder instead.'''
         if result.kind == 'problem':
             return   # a calculation that does not work: nothing to run
-        if result.kind == 'app':
+        if result.kind == 'file':
+            problem = launch.show_in_folder(result.value, timestamp) \
+                if reveal else launch.open_path(result.value, timestamp)
+        elif result.kind == 'app':
             problem = launch.launch_app(result.app.info, timestamp)
         elif result.kind == 'calc':
             clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
@@ -580,6 +664,7 @@ class KachelWindow(Gtk.Window):
         '''Back to the state the next show should start from: an empty
         search field, the main view with the wall (not the app list), the
         first action page and nothing armed. No pill, no suggestions.'''
+        self._stop_files()
         self.searchbar.reset()
         self.suggestions.hide_list()
         self.wall.reset_hover()
@@ -659,7 +744,7 @@ class KachelWindow(Gtk.Window):
             self.results.move(-1)
             return True
         if key in (Gdk.KEY_Return, Gdk.KEY_KP_Enter, Gdk.KEY_ISO_Enter):
-            self.results.activate_selected(event.time)
+            self.results.activate_selected(event.time, reveal=ctrl)
             return True
         if ctrl and Gdk.KEY_1 <= key <= Gdk.KEY_9:
             self.results.activate(key - Gdk.KEY_1, event.time)
