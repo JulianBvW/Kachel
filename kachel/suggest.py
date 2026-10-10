@@ -1,8 +1,8 @@
 '''The suggestion list under the search bar while an @word is typed.
 
 Design §7: a popover with one row per scope abbreviation that fits what
-is typed so far, the first one highlighted, and a footer saying how to
-take one. It floats over the window and takes clicks itself.
+is typed so far, the first one highlighted. It floats over the window and
+takes clicks itself.
 '''
 
 import gi
@@ -20,7 +20,6 @@ ROW_HEIGHT = 40
 GLYPH = 18
 CODE_WIDTH = 76
 NAME_WIDTH = 60
-FOOTER = 'Tab übernimmt · Leertaste nach dem Kürzel macht eine Pille daraus'
 
 
 class Suggestions(Gtk.Box):
@@ -42,13 +41,7 @@ class Suggestions(Gtk.Box):
 
         self._list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         self.pack_start(self._list, False, False, 0)
-        footer = Gtk.Label(label=FOOTER, xalign=0)
-        footer.get_style_context().add_class('kachel-suggestions-footer')
-        footer.set_ellipsize(Pango.EllipsizeMode.END)
-        footer.set_max_width_chars(1)
-        self.pack_start(footer, False, False, 0)
         self._list.show()
-        footer.show()
         # Not part of the window's show_all; it comes when @ is typed.
         self.set_no_show_all(True)
 

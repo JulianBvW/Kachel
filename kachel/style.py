@@ -330,11 +330,6 @@ button.kachel-suggestion .ms-icon {{
 .kachel-suggestion-hint {{
   color: rgba(255, 255, 255, 0.55);
 }}
-.kachel-suggestions-footer {{
-  font-size: {secondary}pt;
-  color: rgba(255, 255, 255, 0.45);
-  padding: 6px 10px 2px 10px;
-}}
 
 entry.kachel-search-entry {{
   background: none;
