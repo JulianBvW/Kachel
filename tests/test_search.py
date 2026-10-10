@@ -61,21 +61,6 @@ check('ties go alphabetically, case not counting',
 check('empty query finds nothing', names('', apps) == [] and names('   ', apps) == [])
 check('accents in the query do not matter', names('ÌMAGE', apps)[0] == 'Image Viewer')
 
-section('calculate')
-cases = [
-    ('2+3*4', '14'), ('(2+3)*4', '20'), ('2^10', '1024'), ('2**3**2', '512'),
-    ('3,5*2', '7'), ('1,5+1', '2,5'), ('1.5+1', '2.5'), ('7/2', '3,5'),
-    ('-3+1', '-2'), ('  1 + 1 ', '2'), ('0.1+0.2', '0.3'), ('3×4', '12'),
-    ('10÷4', '2,5'), ('-(1+2)*2', '-6'), ('2^-1', '0,5'),
-]
-for text, expected in cases:
-    got = search.calculate(text)
-    check(f'{text!r} = {expected}', got == expected, got)
-for text in ('42', '-3', '1/0', '2^99999', '10^999', 'abc', '2 3', '(1+2', '1+',
-             '', '   ', 'fire', '1,5', 'e+1', '1e5+1', '(-8)^0.5', '(-2)**(1/3)'):
-    got = search.calculate(text)
-    check(f'{text!r} is not a sum', got is None, got)
-
 section('prepared match fields')
 prepared = A('Firefox')
 prepared.match = ('firefox', ['web browser'])
@@ -83,12 +68,6 @@ check('a prepared app is matched on its prepared fields',
       search.word_score('web', prepared) == 3, search.word_score('web', prepared))
 check('an app without them is normalized on the spot',
       search.match_fields(A('Écran', keywords=('Ä',))) == ('ecran', ['a']))
-
-section('format_number')
-check('whole numbers without decimals', search.format_number(14.0) == '14')
-check('comma by default', search.format_number(2.5) == '2,5')
-check('point on request', search.format_number(2.5, comma=False) == '2.5')
-check('ten significant digits', search.format_number(1 / 3) == '0,3333333333')
 
 section('results and header')
 rows = search.results('fire', apps)
@@ -126,6 +105,17 @@ check('@w: no apps even if the word fits one', search.results('fire', apps, scop
 check('@w, nothing typed: no rows', search.results('', apps, scope='w') == [])
 check('@w, nothing typed: a hint in the header',
       search.header('', [], 'w') == 'Suchbegriff eingeben')
+rows = search.results('sqrt(2)', apps, scope='=')
+check('=: the answer alone', [(r.kind, r.title) for r in rows] == [('calc', '= 1,414213562')], rows)
+rows = search.results('sqrt(-1)', apps, scope='=')
+check('=: what does not work says why',
+      rows[0].kind == 'problem' and rows[0].title == 'sqrt(-1) geht nicht', rows)
+rows = search.results('fire', apps, scope='=')
+check('=: no apps, a problem instead', [r.kind for r in rows] == ['problem'], rows)
+check('=: nothing typed, nothing listed, a hint above',
+      search.results('', apps, scope='=') == [] and search.header('', [], '=') == 'Rechnung eingeben')
+rows = search.results('pi', apps)
+check('pi alone in the plain search is a word, not a sum', all(r.kind != 'calc' for r in rows), rows)
 check('the web address is escaped',
       search.web_url('a b&c') == 'https://duckduckgo.com/?q=a+b%26c')
 

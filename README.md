@@ -54,7 +54,7 @@ Cinnamon only: the shortcut goes through Cinnamon's own keybindings.
 | typing | search |
 | `↑` `↓` `Enter` | pick a result and run it |
 | `Ctrl+1` … `Ctrl+9` | run result 1 to 9 at once |
-| `@a␣` `@w␣` | narrow the search to a scope (see below) |
+| `@a␣` `@w␣` `=␣` | narrow the search to a scope (see below) |
 | `Tab` | take the highlighted `@` suggestion |
 | `Backspace` in an empty field | drop the scope pill |
 | `Ctrl+Backspace` | clear the search and the pill, back to the tiles |
@@ -67,7 +67,24 @@ running, which is why the window is there the instant the key is pressed.
 Typing replaces the wall with a list of results: every installed app, pinned
 or not, matched by name, generic name, keywords and program name -- and by
 letters in order, so `gmp` finds GIMP. A sum like `3,5*2` is worked out
-(comma or point, as you like); Enter copies the answer. With no hit at all,
+(comma or point, as you like); Enter copies the answer.
+
+The calculator knows more than the four basic operations:
+
+| | |
+|---|---|
+| functions | `sqrt` or `√`, `ln`, `log` (base 10), `log2`, `log(x; b)`, `exp`, `abs`, `round(x; n)`, `floor`, `ceil`, `min(a; b; …)`, `max(…)` |
+| angles | `sin cos tan asin acos atan` in degrees, `sinr cosr tanr asinr acosr atanr` in radians, `rad()` and `deg()` to convert |
+| constants | `pi` or `π`, `e`, `tau`, `g` (9,80665), `c` (299792458) |
+| operators | `+ - * / ^`, `%` (remainder), `!` (factorial), brackets |
+| numbers | `1,5` or `1.5`, `1e6`, `2,5e-3`, `0xff`, `0b1010` |
+
+Arguments are separated by `;`, because the comma is a decimal mark. A
+function with one argument also works without brackets: `sqrt 2`, `sin 30`.
+In the plain search only an obvious calculation counts -- a digit and an
+operation -- so `pi` alone still looks for apps. Start with `= ` for the
+calculator pill: there everything is a calculation, and what does not
+work says why. With no hit at all,
 Enter searches the web instead. The list scrolls and loads more as you go.
 
 A scope narrows the search. Type its abbreviation and a space and it turns
@@ -77,6 +94,7 @@ into a pill in front of the field; typing `@` alone lists the scopes.
 |---|---|
 | `@a` Apps | apps only, no calculator; with nothing typed, every app from A to Z |
 | `@w` Web | your words on DuckDuckGo; bangs work (`minecraft !yt`) |
+| `=` Calculator | at the very start: everything is a calculation |
 
 Click the pill, or press Backspace in the empty field, to drop it. Files
 (`@f`) are next.

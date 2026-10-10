@@ -24,6 +24,17 @@ scope, text, _ = query.take_pill('@x @a hi', 8)
 check('an unknown one before a known one is skipped',
       scope.code == 'a' and text == '@x hi', text)
 
+scope, text, cursor = query.take_pill('= sqrt(2)', 9)
+check('= and a space at the start: the calculator pill',
+      (scope.code, text, cursor) == ('=', 'sqrt(2)', 7), (scope, text, cursor))
+for typed in ('x = 5', '=5', ' = 5', '=='):
+    scope, text, _ = query.take_pill(typed, len(typed))
+    check(f'{typed!r} stays text', scope is None and text == typed, scope)
+check('the calculator pill has a CSS name of its own', query.CALC.css == 'calc')
+scope, text, _ = query.take_pill('= vs ==', 7, calc=False)
+check('= is text while another pill is there', scope is None and text == '= vs ==')
+check('and is never offered for @', all(s.code != '=' for s in query.suggestions('@')))
+
 section('word_at')
 check('right behind a word', query.word_at('foo @w', 6) == (4, '@w'))
 check('inside a word', query.word_at('foo @web', 6) == (4, '@web'))

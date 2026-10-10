@@ -127,7 +127,7 @@ class SearchBar(Gtk.Box):
             return
         context = self._pill.get_style_context()
         if self._scope is not None:
-            context.remove_class(f'scope-{self._scope.code}')
+            context.remove_class(f'scope-{self._scope.css}')
         self._scope = scope
         for child in self._pill_box.get_children():
             self._pill_box.remove(child)
@@ -136,7 +136,7 @@ class SearchBar(Gtk.Box):
             self._pill.hide()
             self._entry.set_placeholder_text(PLACEHOLDER)
             return
-        context.add_class(f'scope-{scope.code}')
+        context.add_class(f'scope-{scope.css}')
         self._pill_box.pack_start(
             icons.icon_widget(scope.icon, PILL_GLYPH, filled=True),
             False, False, 0)
@@ -174,7 +174,8 @@ class SearchBar(Gtk.Box):
         if self._taking:
             return
         scope, text, cursor = query.take_pill(entry.get_text(),
-                                              entry.get_position())
+                                              entry.get_position(),
+                                              calc=self._scope is None)
         if scope is not None:
             # Rewriting the text sends 'changed' again; that one is ours.
             self._taking = True

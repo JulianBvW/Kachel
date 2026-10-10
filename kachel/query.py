@@ -1,9 +1,10 @@
 '''What was typed into the search bar: text, and the scope pill. Pure.
 
 An abbreviation followed by a space -- `@a ` or `@w ` -- turns into a pill
-and leaves the text. Words starting with `@` that are not abbreviations
-(mail addresses, say) stay text. The abbreviation for the files, AI and
-tldr are known already but not switched on yet.
+and leaves the text; so does `= ` at the very start, for the calculator.
+Words starting with `@` that are not abbreviations (mail addresses, say)
+stay text. The abbreviations for the files, AI and tldr are known already
+but not switched on yet.
 '''
 
 import re
@@ -19,6 +20,12 @@ class Scope:
     fill: str          # pill background (Design §5, oklch turned into hex)
     ink: str           # pill text
     active: bool = True
+    key: str = None    # for CSS class names; the code unless that won't do
+    prefix: str = '@'  # what comes before the code; '' for '='
+
+    @property
+    def css(self):
+        return self.key or self.code
 
 
 SCOPES = (
@@ -32,17 +39,27 @@ SCOPES = (
           '#d6b4ff', '#3a1a5c', active=False),
     Scope('tldr', 'tldr', 'ms:terminal', 'Befehle nachschlagen',
           '#7fd9d0', '#00302c', active=False),
+    # Typed as '= ' at the very start, never offered after an @.
+    Scope('=', 'Rechner', 'ms:calculate', 'rechnen, auch mit Funktionen',
+          '#d6c665', '#312900', key='calc', prefix=''),
 )
-BY_CODE = {scope.code: scope for scope in SCOPES if scope.active}
+CALC = SCOPES[-1]
+BY_CODE = {scope.code: scope for scope in SCOPES
+           if scope.active and scope.prefix == '@'}
 
 # @code followed by whitespace, at the start or after whitespace.
 PILL = re.compile(r'(^|(?<=\s))@(\w+)\s')
 
 
-def take_pill(text, cursor):
+def take_pill(text, cursor, calc=True):
     '''-> (scope or None, text, cursor). The first known @code that is
     followed by whitespace becomes the scope and leaves the text; the
-    cursor keeps its place relative to what is left.'''
+    cursor keeps its place relative to what is left. '= ' counts only at
+    the very start, and only with `calc` -- not while another pill is
+    there: with Web, '= vs ==' is something to look up.'''
+    match = re.match(r'=\s', text) if calc else None
+    if match:
+        return CALC, text[match.end():], max(0, cursor - match.end())
     for match in PILL.finditer(text):
         scope = BY_CODE.get(match[2].lower())
         if scope is None:
@@ -75,8 +92,8 @@ def suggestions(word):
     if not word.startswith('@') or ':' in word:
         return []
     typed = word[1:].lower()
-    return [scope for scope in SCOPES
-            if scope.active and scope.code.startswith(typed)]
+    return [scope for scope in BY_CODE.values()
+            if scope.code.startswith(typed)]
 
 
 def complete(text, cursor, scope):

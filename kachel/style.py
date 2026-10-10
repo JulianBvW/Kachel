@@ -419,10 +419,10 @@ def pill_css():
     rules = []
     for scope in query.SCOPES:
         rules.append(
-            f'button.kachel-pill.scope-{scope.code},\n'
-            f'button.kachel-pill.scope-{scope.code} .ms-icon {{\n'
+            f'button.kachel-pill.scope-{scope.css},\n'
+            f'button.kachel-pill.scope-{scope.css} .ms-icon {{\n'
             f'  color: {scope.ink};\n}}\n'
-            f'button.kachel-pill.scope-{scope.code} {{\n'
+            f'button.kachel-pill.scope-{scope.css} {{\n'
             f'  background-color: {scope.fill};\n}}\n')
     return ''.join(rules)
 

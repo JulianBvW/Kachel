@@ -20,7 +20,8 @@ BATCH = 20
 KEY_HINTS = 9    # Ctrl+1 ... Ctrl+9
 
 # The symbol for rows that are not apps.
-KIND_ICONS = {'calc': 'ms:calculate', 'web': 'ms:public'}
+KIND_ICONS = {'calc': 'ms:calculate', 'web': 'ms:public',
+              'problem': 'ms:error'}
 
 
 class ResultList(Gtk.Box):
@@ -208,7 +209,7 @@ class ResultList(Gtk.Box):
         texts.pack_start(sub, False, False, 0)
         content.pack_start(texts, True, True, 0)
 
-        if index < KEY_HINTS:
+        if index < KEY_HINTS and result.kind != 'problem':
             hint = Gtk.Label(label=f'Ctrl {index + 1}')
             hint.get_style_context().add_class('kachel-key-hint')
             hint.set_valign(Gtk.Align.CENTER)

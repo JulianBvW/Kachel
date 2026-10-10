@@ -5,11 +5,12 @@ with what is on the wall. A scope pill narrows it: @a to the apps alone,
 @w to a web search. Files come later, with @f.
 '''
 
-import math
 import re
 import unicodedata
 import urllib.parse
 from dataclasses import dataclass
+
+from . import calc
 
 
 # -- matching --------------------------------------------------------------
@@ -95,162 +96,11 @@ def rank(query, apps):
     return [app for _total, _name, app in scored]
 
 
-# -- the calculator --------------------------------------------------------
-
-TOKEN = re.compile(r'\s*(?:(\d+(?:[.,]\d+)?|[.,]\d+)|(\*\*|[-+*/^()×÷]))')
-MAX_EXPONENT = 1000
-
-
-class _NotACalculation(Exception):
-    pass
-
-
-class _Parser:
-    '''Recursive descent over the tokens. No eval, ever.
-
-        expr   = term  (('+' | '-') term)*
-        term   = unary (('*' | '/') unary)*
-        unary  = ('+' | '-') unary | power
-        power  = atom (('^' | '**') unary)?      right-associative
-        atom   = number | '(' expr ')'
-    '''
-
-    def __init__(self, tokens):
-        self.tokens = tokens
-        self.index = 0
-        self.operators = 0   # binary ones; '-3' alone is not a sum
-
-    def peek(self):
-        return self.tokens[self.index] if self.index < len(self.tokens) \
-            else None
-
-    def take(self):
-        token = self.peek()
-        self.index += 1
-        return token
-
-    def expr(self):
-        value = self.term()
-        while self.peek() in ('+', '-'):
-            op = self.take()
-            self.operators += 1
-            right = self.term()
-            value = value + right if op == '+' else value - right
-        return value
-
-    def term(self):
-        value = self.unary()
-        while self.peek() in ('*', '/', '×', '÷'):
-            op = self.take()
-            self.operators += 1
-            right = self.unary()
-            if op in ('*', '×'):
-                value = value * right
-            elif right == 0:
-                raise _NotACalculation('division by zero')
-            else:
-                value = value / right
-        return value
-
-    def unary(self):
-        if self.peek() in ('+', '-'):
-            sign = self.take()
-            value = self.unary()
-            return -value if sign == '-' else value
-        return self.power()
-
-    def power(self):
-        base = self.atom()
-        if self.peek() in ('^', '**'):
-            self.take()
-            self.operators += 1
-            exponent = self.unary()
-            if abs(exponent) > MAX_EXPONENT:
-                raise _NotACalculation('exponent too large')
-            try:
-                value = base ** exponent
-            except (OverflowError, ZeroDivisionError):
-                raise _NotACalculation('out of range')
-            # A negative base to a fractional power is complex in Python,
-            # (-8) ** 0.5 for one. No answer a launcher should give.
-            if isinstance(value, complex):
-                raise _NotACalculation('not a real number')
-            return value
-        return base
-
-    def atom(self):
-        token = self.take()
-        if token == '(':
-            value = self.expr()
-            if self.take() != ')':
-                raise _NotACalculation('unclosed bracket')
-            return value
-        if isinstance(token, float):
-            return token
-        raise _NotACalculation(f'unexpected {token!r}')
-
-
-def _tokenize(text):
-    '''Numbers as floats, operators as strings, and the decimal separators
-    that were used. (None, ...) if there is anything else in `text`.'''
-    tokens, position, separators = [], 0, set()
-    text = text.strip()
-    while position < len(text):
-        match = TOKEN.match(text, position)
-        if match is None:
-            return None, separators
-        number, operator = match.groups()
-        if number is not None:
-            separators.update(c for c in number if c in ',.')
-            tokens.append(float(number.replace(',', '.')))
-        else:
-            tokens.append(operator)
-        position = match.end()
-        while position < len(text) and text[position].isspace():
-            position += 1
-    return tokens, separators
-
-
-def format_number(value, comma=True):
-    '''Whole numbers without decimals, the rest with up to 10 digits.'''
-    if value == int(value) and abs(value) < 1e15:
-        text = str(int(value))
-    else:
-        text = f'{value:.10g}'
-    return text.replace('.', ',') if comma else text
-
-
-def calculate(text):
-    '''The result of a sum as text, or None if `text` is not a sum.
-
-    A decimal comma and a decimal point both work. The answer uses the
-    comma unless the question used a point -- '1.5+1' gives '2.5',
-    '1,5+1' and '7/2' give '2,5' and '3,5'. A plain number is not a sum:
-    '42' is something to search for.
-    '''
-    if not text or not text.strip():
-        return None
-    tokens, separators = _tokenize(text)
-    if not tokens:
-        return None
-    uses_point = separators == {'.'}
-    parser = _Parser(tokens)
-    try:
-        value = parser.expr()
-        if parser.peek() is not None:
-            return None
-    except (_NotACalculation, IndexError):
-        return None
-    if parser.operators == 0 or math.isnan(value) or math.isinf(value):
-        return None
-    return format_number(value, comma=not uses_point)
-
-
 # -- what the list shows ---------------------------------------------------
 
 @dataclass
 class Result:
-    kind: str           # 'calc', 'app' or 'web'
+    kind: str           # 'calc', 'app', 'web', or 'problem' (does nothing)
     title: str
     subtitle: str
     app: object = None  # for 'app'
@@ -265,6 +115,7 @@ def web_url(query):
 def results(query, apps, scope=None, listed=()):
     '''The rows for `query` in `scope` (a query.Scope code, or None).
 
+    '=': the calculator alone; what does not work says why.
     No scope: the sum first, then every app that fits -- no limit, the
     list loads them in portions -- and without a single hit a way on:
     searching the web. 'a': apps only; with nothing typed, all of
@@ -272,6 +123,14 @@ def results(query, apps, scope=None, listed=()):
     bangs like `!yt` simply go along in the query.
     '''
     text = query.strip()
+    if scope == '=':
+        if not text:
+            return []
+        answer = calc.evaluate(text)
+        if isinstance(answer, calc.Answer):
+            return [Result('calc', f'= {answer.text}', text,
+                           value=answer.text)]
+        return [Result('problem', answer.message, text)]
     if scope == 'w':
         if not text:
             return []
@@ -282,7 +141,7 @@ def results(query, apps, scope=None, listed=()):
 
     rows = []
     if scope is None:
-        answer = calculate(query)
+        answer = calc.calculate(query)
         if answer is not None:
             rows.append(Result('calc', f'= {answer}', text, value=answer))
     rows += [_app_row(app) for app in rank(query, apps)]
@@ -299,6 +158,8 @@ def _app_row(app):
 def header(query, rows, scope=None):
     '''The line above the rows: how many hits, or that there are none.'''
     text = query.strip()
+    if scope == '=':
+        return 'Rechner' if text else 'Rechnung eingeben'
     if scope == 'w' and not text:
         return 'Suchbegriff eingeben'
     if scope == 'w':

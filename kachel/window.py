@@ -393,6 +393,8 @@ class KachelWindow(Gtk.Window):
 
     def _on_result(self, result, timestamp):
         '''A result row was chosen: start, copy or open, then go away.'''
+        if result.kind == 'problem':
+            return   # a calculation that does not work: nothing to run
         if result.kind == 'app':
             problem = launch.launch_app(result.app.info, timestamp)
         elif result.kind == 'calc':

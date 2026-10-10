@@ -34,6 +34,7 @@ FALLBACK = {
     'calculate': 'accessories-calculator-symbolic',
     'public': 'web-browser-symbolic',
     'check': 'object-select-symbolic',
+    'error': 'dialog-error-symbolic',
     'more_horiz': 'view-more-horizontal-symbolic',
     'arrow_back': 'go-previous-symbolic',
     'folder': 'folder-symbolic',
