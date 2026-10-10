@@ -12,7 +12,8 @@ Large tiles carry shortcuts: a terminal tile with buttons for
 
 ## Status
 
-Work in progress. Nothing here runs yet.
+Work in progress. What runs so far is the frame: a resident service and an
+empty pane of glass that `F7` shows and hides.
 
 ## Requirements
 
@@ -21,7 +22,41 @@ Work in progress. Nothing here runs yet.
 
 ## Install
 
-To be written once there is something to install.
+```
+git clone git@github.com:JulianBvW/Kachel.git
+cd Kachel
+/usr/bin/python3 install.py
+```
+
+It asks for one thing, the shortcut, and suggests `F7`. The shortcut is
+checked against the ones your desktop already holds before it is taken.
+
+`/usr/bin/python3`, not `python3`: on a machine with conda or miniforge in the
+PATH the latter has no `gi`, and the script says so rather than failing at the
+next login.
+
+The package is copied to `~/.local/share/kachel`, so the clone can be moved or
+deleted afterwards. `--in-place` wires it to the current folder instead, which
+is what you want while working on it. `--uninstall` takes everything back off.
+
+Cinnamon only: the shortcut goes through Cinnamon's own keybindings.
+
+## Keys
+
+| Key | |
+|---|---|
+| `F7` | show or hide |
+| `Esc` | hide |
+
+Clicking anywhere else hides it too. Hidden is not closed: the service keeps
+running, which is why the window is there the instant the key is pressed.
+
+## Blur
+
+The glass needs the BlurCinnamon
+extension and an entry for the window class `Kachel` in its settings. The
+installer tells you the values, but never writes them itself. Without an
+entry Kachel draws a nearly opaque pane instead.
 
 ## Tests
 
