@@ -5,11 +5,14 @@ system, ~/.local/share/applications and the Flatpak exports alike.
 '''
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import gi
 
 gi.require_version('Gio', '2.0')
 from gi.repository import Gio, GLib  # noqa: E402
+
+from . import search  # noqa: E402
 
 
 @dataclass
@@ -19,6 +22,16 @@ class App:
     icon: object     # Gio.Icon, or None
     info: object     # Gio.DesktopAppInfo
     visible: bool    # False for NoDisplay entries
+    generic_name: str = ''    # 'Web Browser' -- searched, not shown
+    keywords: tuple = ()      # Keywords= from the .desktop file
+    executable: str = ''      # 'firefox', the program's own name
+    description: str = ''     # Comment=, the line under the name
+    match: tuple = None       # prepared by search.match_fields
+
+# Programs that only start the real one. Matching on them would make
+# 'flat' find every Flatpak app.
+WRAPPERS = {'flatpak', 'env', 'sh', 'bash', 'snap', 'python', 'python3',
+            'java', 'wine', 'gtk-launch', 'pkexec', 'sudo'}
 
 
 class AppIndex:
@@ -34,8 +47,15 @@ class AppIndex:
             app_id = info.get_id()
             if not app_id:
                 continue
-            apps[app_id] = App(app_id, info.get_display_name() or app_id,
-                               info.get_icon(), info, info.should_show())
+            apps[app_id] = App(
+                app_id, info.get_display_name() or app_id, info.get_icon(),
+                info, info.should_show(),
+                generic_name=info.get_generic_name() or '',
+                keywords=tuple(info.get_keywords() or ()),
+                executable=_program(info),
+                description=info.get_description() or '')
+            app = apps[app_id]
+            app.match = search.match_fields(app)
         self.apps = apps
 
     def resolve(self, app_id):
@@ -56,6 +76,12 @@ class AppIndex:
         '''The apps a menu would show, sorted the way people read them.'''
         shown = [app for app in self.apps.values() if app.visible]
         return sorted(shown, key=lambda app: sort_key(app.name))
+
+
+def _program(info):
+    '''The program's own name, or '' when Exec= only names a launcher.'''
+    name = Path(info.get_executable() or '').name
+    return '' if name in WRAPPERS else name
 
 
 def sort_key(name):

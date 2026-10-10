@@ -5,7 +5,7 @@ from pathlib import Path
 import gi
 
 gi.require_version('Gdk', '3.0')
-from gi.repository import Gdk, GLib  # noqa: E402
+from gi.repository import Gdk, Gio, GLib  # noqa: E402
 
 
 def launch_app(info, timestamp):
@@ -34,6 +34,17 @@ def launch_command(command):
     try:
         GLib.spawn_async(['/bin/sh', '-c', command],
                          working_directory=str(Path.home()))
+    except GLib.Error as error:
+        return error.message
+    return None
+
+
+def open_uri(uri, timestamp):
+    '''Open a web address in the default browser. None or the error.'''
+    context = Gdk.Display.get_default().get_app_launch_context()
+    context.set_timestamp(timestamp)
+    try:
+        Gio.AppInfo.launch_default_for_uri(uri, context)
     except GLib.Error as error:
         return error.message
     return None

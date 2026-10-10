@@ -10,7 +10,7 @@ import gi
 gi.require_version('Gtk', '3.0')
 gi.require_version('Gdk', '3.0')
 gi.require_version('Pango', '1.0')
-from gi.repository import Gdk, Gtk, Pango  # noqa: E402
+from gi.repository import Gdk, Gio, Gtk, Pango  # noqa: E402
 
 FALLBACK_SIZE = 10.0   # points, if the font name carries no size
 
@@ -93,6 +93,97 @@ button.tile:checked {{
 .kachel-error {{
   padding: 8px 24px 0 24px;
 }}
+
+.ms-icon {{
+  color: rgba(255, 255, 255, 0.88);
+}}
+
+button.kachel-search-button,
+button.kachel-search-button:hover,
+button.kachel-search-button:active {{
+  background-image: none;
+  border: none;
+  box-shadow: none;
+  text-shadow: none;
+  outline: none;
+  border-radius: 6px;
+  padding: 0;
+  min-width: 30px;
+  min-height: 30px;
+}}
+button.kachel-search-button {{
+  background-color: transparent;
+}}
+button.kachel-search-button .ms-icon {{
+  color: rgba(255, 255, 255, 0.65);
+}}
+button.kachel-search-button:hover {{
+  background-color: rgba(255, 255, 255, 0.10);
+}}
+button.kachel-search-button:hover .ms-icon {{
+  color: #FFFFFF;
+}}
+
+entry.kachel-search-entry {{
+  background: none;
+  border: none;
+  box-shadow: none;
+  outline: none;
+  padding: 0;
+  min-height: 0;
+  color: #F3F3F3;
+  caret-color: #FFFFFF;
+  font-size: {search}pt;
+}}
+entry.kachel-search-entry selection {{
+  background-color: rgba(255, 255, 255, 0.25);
+  color: #FFFFFF;
+}}
+
+.kachel-results-header {{
+  font-size: {category}pt;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.55);
+  padding: 8px 14px;
+}}
+
+button.kachel-result,
+button.kachel-result:hover,
+button.kachel-result:active {{
+  background-image: none;
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+  text-shadow: none;
+  outline: none;
+  border-radius: 8px;
+  padding: 0 14px;
+  min-height: 54px;
+}}
+button.kachel-result.selected {{
+  background-color: rgba(255, 255, 255, 0.10);
+}}
+
+.kachel-result-plate {{
+  background-color: rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+}}
+.kachel-result-name {{
+  font-size: {name}pt;
+  color: #F3F3F3;
+}}
+.kachel-result-sub {{
+  font-size: {secondary}pt;
+  color: rgba(255, 255, 255, 0.55);
+}}
+.kachel-key-hint {{
+  font-family: "{mono}";
+  font-size: {secondary}pt;
+  color: rgba(255, 255, 255, 0.6);
+  background-color: rgba(255, 255, 255, 0.08);
+  border-radius: 5px;
+  padding: 3px 7px;
+}}
 '''
 
 
@@ -105,12 +196,31 @@ def base_size(font_name):
     return size if size > 0 else FALLBACK_SIZE
 
 
-def css(base):
-    '''The style sheet for a system font of `base` points, as bytes.'''
+def css(base, mono='Monospace'):
+    '''The style sheet for a system font of `base` points, as bytes.
+
+    `mono` is the family of the system's monospace font, for key hints.
+    '''
     def pt(delta):
         return f'{base + delta:g}'
     return TEMPLATE.format(base=pt(0), category=pt(-1.5), tile=pt(-1.5),
-                           secondary=pt(-1)).encode('utf-8')
+                           secondary=pt(-1), search=pt(5), name=pt(1),
+                           mono=mono.replace('"', '')).encode('utf-8')
+
+
+def monospace_family():
+    '''The family of the system's monospace font, e.g. 'DejaVu Sans Mono'.
+
+    Looked up before it is opened: Gio.Settings on a schema that is not
+    installed aborts the process.
+    '''
+    schema_id = 'org.gnome.desktop.interface'
+    source = Gio.SettingsSchemaSource.get_default()
+    schema = source.lookup(schema_id, True) if source else None
+    if schema is None or not schema.has_key('monospace-font-name'):
+        return 'Monospace'
+    name = Gio.Settings.new(schema_id).get_string('monospace-font-name')
+    return Pango.FontDescription.from_string(name).get_family() or 'Monospace'
 
 
 class Style:
@@ -127,4 +237,5 @@ class Style:
 
     def refresh(self):
         name = Gtk.Settings.get_default().get_property('gtk-font-name')
-        self._provider.load_from_data(css(base_size(name)))
+        self._provider.load_from_data(css(base_size(name),
+                                          monospace_family()))

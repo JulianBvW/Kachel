@@ -5,39 +5,19 @@ tile goes is plain arithmetic and tested on its own. This file only turns
 rectangles into widgets.
 '''
 
-from pathlib import Path
-
 import gi
 
 gi.require_version('Gtk', '3.0')
 gi.require_version('Pango', '1.0')
-from gi.repository import Gio, Gtk, Pango  # noqa: E402
+from gi.repository import Gtk, Pango  # noqa: E402
 
-from . import layout  # noqa: E402
+from . import icons, layout  # noqa: E402
 
 # Icon size in pixels for each tile size.
 ICON_SIZES = {'small': 22, 'medium': 36, 'wide': 40, 'large': 72}
-FALLBACK_ICON = 'application-x-executable'
 
 EMPTY_HINT = ('Noch keine Kacheln — angeheftet wird in '
               '~/.config/kachel/tiles.toml')
-
-
-def tile_icon(tile, app, base):
-    '''The Gio.Icon for a tile: its own `icon`, else the app's, else a
-    generic one. `ms:` icons need the icon font of phase 3; until then the
-    app's own icon stands in. A relative file path is taken relative to the
-    settings folder `base`, not to wherever the service happened to start.'''
-    spec = tile.icon
-    if spec and spec.startswith('theme:'):
-        return Gio.ThemedIcon.new(spec[len('theme:'):])
-    if spec and not spec.startswith('ms:'):
-        path = Path(base) / Path(spec).expanduser()
-        if path.is_file():
-            return Gio.FileIcon.new(Gio.File.new_for_path(str(path)))
-    if app is not None and app.icon is not None:
-        return app.icon
-    return Gio.ThemedIcon.new(FALLBACK_ICON)
 
 
 class TileWall(Gtk.Box):
@@ -136,13 +116,13 @@ class TileWall(Gtk.Box):
 
         overlay = Gtk.Overlay()
         # The base layer fixes the size; icon and label float on top of it.
-        base = Gtk.Box()
-        base.set_size_request(rect.width, rect.height)
-        overlay.add(base)
+        floor = Gtk.Box()
+        floor.set_size_request(rect.width, rect.height)
+        overlay.add(floor)
 
-        image = Gtk.Image.new_from_gicon(tile_icon(tile, app, base),
-                                         Gtk.IconSize.DIALOG)
-        image.set_pixel_size(ICON_SIZES[tile.size])
+        image = icons.icon_widget(tile.icon, ICON_SIZES[tile.size],
+                                  fallback=app.icon if app else None,
+                                  base=base)
         image.set_halign(Gtk.Align.CENTER)
         image.set_valign(Gtk.Align.CENTER)
         overlay.add_overlay(image)

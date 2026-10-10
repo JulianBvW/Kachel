@@ -13,8 +13,9 @@ Large tiles carry shortcuts: a terminal tile with buttons for
 ## Status
 
 Work in progress. What runs so far: a resident service, a pane of glass that
-`F7` shows and hides, and the tile wall, read from a file and started with a
-click. Search, the icon rail and the shortcuts on large tiles are next.
+`F7` shows and hides, the tile wall read from a file, and the search over
+every installed app, with a calculator. The shortcuts on large tiles and the
+icon rail are next.
 
 ## Requirements
 
@@ -49,9 +50,21 @@ Cinnamon only: the shortcut goes through Cinnamon's own keybindings.
 |---|---|
 | `F7` | show or hide |
 | `Esc` | hide |
+| typing | search |
+| `↑` `↓` `Enter` | pick a result and run it |
+| `Ctrl+1` … `Ctrl+9` | run result 1 to 9 at once |
+| `Ctrl+Backspace` | clear the search, back to the tiles |
 
 Clicking anywhere else hides it too. Hidden is not closed: the service keeps
 running, which is why the window is there the instant the key is pressed.
+
+## Search
+
+Typing replaces the wall with a list of results: every installed app, pinned
+or not, matched by name, generic name, keywords and program name -- and by
+letters in order, so `gmp` finds GIMP. A sum like `3,5*2` is worked out
+(comma or point, as you like); Enter copies the answer. With no hit at all,
+Enter searches the web instead.
 
 ## Configuration
 
@@ -127,3 +140,7 @@ for f in tests/test_*.py; do /usr/bin/python3 "$f"; done
 ## Licence
 
 MIT, see [LICENSE](LICENSE).
+
+The icon font in `kachel/fonts` is Google's Material Symbols Rounded, under
+the Apache License 2.0 (see `kachel/fonts/LICENSE`). It is loaded for Kachel
+alone; nothing is installed on the system.

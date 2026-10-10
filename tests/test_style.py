@@ -22,4 +22,10 @@ check('hover ring inset 1 px 0.30', 'inset 0 0 0 1px rgba(255, 255, 255, 0.30)' 
 sheet = style.css(11).decode()
 check('follows a bigger font', 'font-size: 9.5pt;' in sheet and 'font-size: 11pt;' in sheet)
 
+sheet = style.css(10, 'DejaVu Sans Mono').decode()
+check('search field at +5 pt', 'font-size: 15pt;' in sheet)
+check('key hints in the system monospace', 'font-family: "DejaVu Sans Mono";' in sheet)
+check('monospace family is read from the system',
+      isinstance(style.monospace_family(), str) and style.monospace_family())
+
 harness.report()

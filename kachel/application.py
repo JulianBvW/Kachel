@@ -55,6 +55,14 @@ class KachelApplication(Gtk.Application):
             action.connect('activate', self._timed(name, handler))
             self.add_action(action)
 
+        # Takes the text to search for: `gapplication action <APP_ID> search
+        # "'gimp'"` shows the window with that search. For testing without a
+        # keyboard, and for scripts.
+        action = Gio.SimpleAction.new('search', GLib.VariantType.new('s'))
+        action.connect('activate', self._timed(
+            'search', lambda _a, text: self.window.search(text.get_string())))
+        self.add_action(action)
+
         # Logging out sends SIGTERM, and Python would die on the spot. Routed
         # through the main loop instead, so the exit is an orderly one.
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM,

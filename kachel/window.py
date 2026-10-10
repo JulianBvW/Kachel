@@ -10,8 +10,11 @@ gi.require_version('Gtk', '3.0')
 gi.require_version('Gdk', '3.0')
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from . import blur, config, geometry, launch, settings, style  # noqa: E402
+from . import (blur, config, geometry, icons, launch, search,  # noqa: E402
+               settings, style)
 from .apps import AppIndex  # noqa: E402
+from .results import ResultList  # noqa: E402
+from .searchbar import SearchBar  # noqa: E402
 from .tilewall import TileWall  # noqa: E402
 
 # X11-only, and only needed for a fresh server timestamp. Kept optional so the
@@ -91,6 +94,8 @@ class KachelWindow(Gtk.Window):
         self.connect('delete-event', lambda *_: self.hide_kachel() or True)
 
         self._style = style.Style()
+        Gtk.Settings.get_default().connect(
+            'notify::gtk-fontconfig-timestamp', self._on_fontconfig_changed)
         self._apps = AppIndex()
         self._general = settings.General()
         self._wall_settings = settings.Wall()
@@ -112,29 +117,37 @@ class KachelWindow(Gtk.Window):
     # -- contents --------------------------------------------------------
 
     def _build_body(self):
-        '''Search bar on top, rail on the left, the wall in the rest.
+        '''Search bar on top; below it either the main view or the results.
 
-        Phase 2 fills only the wall. The other two are empty strips of their
-        final size, so the geometry is right from now on and phases 3 and 5
-        only have to put things into them.
+        The main view is the rail on the left (an empty strip until phase 5)
+        and the wall. While there is something in the search field, a single
+        result list takes the place of both.
         '''
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         root.get_style_context().add_class('kachel-root')
 
-        searchbar = Gtk.Box()
-        searchbar.get_style_context().add_class('kachel-searchbar')
-        searchbar.set_size_request(-1, config.SEARCHBAR_HEIGHT)
-        root.pack_start(searchbar, False, False, 0)
+        self.searchbar = SearchBar(on_changed=self._on_search_changed,
+                                   on_close=self.hide_kachel)
+        root.pack_start(self.searchbar, False, False, 0)
 
-        body = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        main = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         rail = Gtk.Box()
         rail.get_style_context().add_class('kachel-rail')
         rail.set_size_request(config.RAIL_WIDTH, -1)
-        body.pack_start(rail, False, False, 0)
-
+        main.pack_start(rail, False, False, 0)
         self.wall = TileWall(on_activate=self._on_activate)
-        body.pack_start(self.wall, True, True, 0)
-        root.pack_start(body, True, True, 0)
+        main.pack_start(self.wall, True, True, 0)
+
+        self.results = ResultList(on_activate=self._on_result)
+        for side in ('top', 'bottom', 'start', 'end'):
+            getattr(self.results, f'set_margin_{side}')(10)
+
+        # No transition: switching is a redraw, not an animation to wait for.
+        self._body = Gtk.Stack()
+        self._body.set_transition_type(Gtk.StackTransitionType.NONE)
+        self._body.add_named(main, 'main')
+        self._body.add_named(self.results, 'results')
+        root.pack_start(self._body, True, True, 0)
 
         self.add(root)
         # Shown now, so mapping the window later is all it takes.
@@ -225,6 +238,60 @@ class KachelWindow(Gtk.Window):
         self._reload_source = None
         self.reload()
         return GLib.SOURCE_REMOVE
+
+    def _on_fontconfig_changed(self, *_args):
+        # GTK rebuilds the font configuration in its own handler for this
+        # signal; ours has to come after that, hence the idle callback.
+        GLib.idle_add(self._reload_fonts)
+
+    def _reload_fonts(self):
+        ok = icons.reload_fonts()
+        self._log('fontconfig changed, icon font loaded again'
+                  if ok else 'fontconfig changed, icon font not loaded')
+        self.reload()
+        return GLib.SOURCE_REMOVE
+
+    # -- searching -------------------------------------------------------
+
+    def search(self, text):
+        '''Show the window with `text` in the search field.
+
+        Behind the `search` action, so the result list can be driven
+        without a keyboard -- for testing, and for scripts later on.
+        '''
+        if not self.get_visible():
+            self.show_kachel()
+        self.searchbar.set_text(text)
+
+    def _on_search_changed(self, text):
+        if not text.strip():
+            self._body.set_visible_child_name('main')
+            return
+        t0 = time.monotonic()
+        rows = search.results(text, self._apps.apps.values())
+        self.results.show_results(rows, search.header(text, rows))
+        self._body.set_visible_child_name('results')
+        self._log(f'search {text!r}: {len(rows)} rows in '
+                  f'{(time.monotonic() - t0) * 1000:.1f} ms')
+
+    def _on_result(self, result, timestamp):
+        '''A result row was chosen: start, copy or open, then go away.'''
+        if result.kind == 'app':
+            problem = launch.launch_app(result.app.info, timestamp)
+        elif result.kind == 'calc':
+            clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+            clipboard.set_text(result.value, -1)
+            # The service keeps running, so the clipboard stays filled
+            # after the window is gone -- no clipboard manager needed.
+            clipboard.store()
+            problem = None
+        else:
+            problem = launch.open_uri(result.value, timestamp)
+        if problem:
+            self._log(f'could not run {result.title!r}: {problem}')
+        else:
+            self._log(f'ran {result.title!r}')
+        self.hide_kachel()
 
     def _on_activate(self, tile, app, timestamp):
         '''A tile was clicked: start it, then get out of the way.'''
@@ -365,6 +432,8 @@ class KachelWindow(Gtk.Window):
         gdk_window = self.get_window()
         if gdk_window is not None:
             gdk_window.focus(ts)
+        # Typing starts at once, without a click into the field first.
+        self.searchbar.focus()
 
         self._log(f'shown in {(time.monotonic() - t0) * 1000:.1f} ms '
                   f'at ({x}, {y})')
@@ -375,11 +444,11 @@ class KachelWindow(Gtk.Window):
         self._log('hidden')
 
     def reset(self):
-        '''Back to the state the next show should start from.
-
-        Nothing to reset yet. From phase 3 on: empty input and pills, tile
-        view, first action page, nothing armed.
-        '''
+        '''Back to the state the next show should start from: an empty
+        search field and the main view. (Later also: no pills, first
+        action page, nothing armed.)'''
+        self.searchbar.reset()
+        self._body.set_visible_child_name('main')
 
     def _placement(self):
         '''Centred in the work area of the monitor under the pointer.'''
@@ -409,11 +478,39 @@ class KachelWindow(Gtk.Window):
     # -- input -----------------------------------------------------------
 
     def _on_key_press(self, _widget, event):
-        # Esc hides, always. F7 is deliberately not handled here: the global
-        # shortcut is a passive grab on the root window, so that key press
-        # never reaches us -- both directions run through the toggle action.
-        if event.keyval == Gdk.KEY_Escape:
+        '''Keys for the search, taken before the input field sees them.
+
+        Esc hides, always. F7 is deliberately not handled here: the global
+        shortcut is a passive grab on the root window, so that key press
+        never reaches us -- both directions run through the toggle action.
+        '''
+        key = event.keyval
+        ctrl = bool(event.state & Gdk.ModifierType.CONTROL_MASK)
+        if key == Gdk.KEY_Escape:
             self.hide_kachel()
+            return True
+        if ctrl and key == Gdk.KEY_BackSpace:
+            # Instead of the field's own "delete a word": everything goes,
+            # back to the wall.
+            self.searchbar.clear()
+            return True
+
+        if self._body.get_visible_child_name() != 'results':
+            return False
+        if key in (Gdk.KEY_Down, Gdk.KEY_KP_Down):
+            self.results.move(1)
+            return True
+        if key in (Gdk.KEY_Up, Gdk.KEY_KP_Up):
+            self.results.move(-1)
+            return True
+        if key in (Gdk.KEY_Return, Gdk.KEY_KP_Enter, Gdk.KEY_ISO_Enter):
+            self.results.activate_selected(event.time)
+            return True
+        if ctrl and Gdk.KEY_1 <= key <= Gdk.KEY_9:
+            self.results.activate(key - Gdk.KEY_1, event.time)
+            return True
+        if ctrl and Gdk.KEY_KP_1 <= key <= Gdk.KEY_KP_9:
+            self.results.activate(key - Gdk.KEY_KP_1, event.time)
             return True
         return False
 

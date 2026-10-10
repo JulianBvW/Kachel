@@ -70,9 +70,14 @@ def main(argv=None):
     # Both of these decide our WM_CLASS, and they have to be set before the
     # first window exists. BlurCinnamon identifies the window by it, so
     # getting this wrong shows up as "the blur just does not happen".
-    from . import config
+    from . import config, icons
     GLib.set_prgname(config.PRG_NAME)
     Gdk.set_program_class(config.PROGRAM_CLASS)
+
+    # The icon font has to be known before Pango first lists the fonts.
+    if not icons.load_fonts():
+        print('kachel: could not load the bundled icon font, '
+              'using theme icons instead', file=sys.stderr)
 
     from .application import KachelApplication
     app = KachelApplication(config_dir=config_dir(argv),
