@@ -90,6 +90,7 @@ def menu_for(target):
             Entry('size', kind='sizes', payload=target.tile_size),
             _groups_menu('group', 'Gruppe', 'ms:folder_open', target.groups,
                          current=target.tile_group),
+            Entry('move', 'Verschieben', 'ms:open_with'),
             Entry('unpin', 'Von der Wand nehmen', 'ms:remove'),
         ])
         if target.app_id:

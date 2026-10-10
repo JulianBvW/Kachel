@@ -132,13 +132,15 @@ def group_rows(placements):
     return max((p.row + SIZES[p.tile.size][1] for p in placements), default=0)
 
 
-def arrange(groups, columns):
+def arrange(groups, columns, extra=None):
     '''Pixel rectangles for headers and tiles, plus the total height.
 
     `groups` is a list of (name, placements). Groups fill the wall row by
     row, `columns` to a row; a row is as tall as its tallest group, so the
     next row starts level. An empty group still shows its header.
+    `extra` ({name: rows}) gives a group empty rows below its tiles.
     '''
+    extra = extra or {}
     columns = max(1, columns)
     headers, tiles = [], []
     y = PAD_TOP
@@ -155,7 +157,7 @@ def arrange(groups, columns):
                 tiles.append((p, Rect(x + p.col * (CELL + CELL_GAP),
                                       top + p.row * (CELL + CELL_GAP),
                                       span(width), span(height))))
-            rows = group_rows(placements)
+            rows = group_rows(placements) + extra.get(name, 0)
             height = HEADER_HEIGHT + HEADER_GAP + span(rows)
             row_height = max(row_height, height)
         y += row_height + GROUP_GAP

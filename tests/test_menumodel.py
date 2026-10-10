@@ -35,14 +35,15 @@ tile = Target('tile', 'ghostty.desktop', groups=('Arbeit', 'Internet', 'Spiele')
               tile_group='Arbeit', tile_size='large')
 entries = menu_for(tile)
 check('sizes, group, take off, then the app part (tiles.toml only on the empty wall)',
-      ids(entries) == ['size', 'group', 'unpin', 'panel', 'desktop', 'favorite'],
+      ids(entries) == ['size', 'group', 'move', 'unpin', 'panel', 'desktop', 'favorite'],
       ids(entries))
 check('the sizes know the current one', entries[0].kind == 'sizes' and entries[0].payload == 'large')
 group = next(e for e in entries if e.id == 'group')
 check('group leaves out the current one',
       [c.label for c in group.children] == ['Internet', 'Spiele', 'Neue Gruppe …'])
 entries = menu_for(Target('tile', None, tile_group='A', tile_size='medium'))
-check('a command tile: only the wall part', ids(entries) == ['size', 'group', 'unpin'])
+check('a command tile: only the wall part', ids(entries) == ['size', 'group', 'move', 'unpin'])
+check('the app list has no moving', 'move' not in ids(menu_for(app)))
 
 section('file and wall')
 entries = menu_for(Target('file', openers=(('xed.desktop', 'Texteditor'), ('code.desktop', 'VS Code'))))

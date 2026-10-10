@@ -130,6 +130,53 @@ def set_size(text, line, size):
     return ''.join(lines), expect
 
 
+def _drop_pos(lines, start, own):
+    '''Delete the `pos` line among the tile's own keys, if there is one.'''
+    pos = _find_key(lines, start + 1, own, 'pos')
+    if pos is not None:
+        if lines[pos].count('[') != lines[pos].count(']'):
+            raise EditError('pos steht über mehrere Zeilen')
+        del lines[pos]
+
+
+POS = re.compile(r'^(\s*pos\s*=\s*)\[[^\]\n]*\](.*)$')
+
+
+def set_pos(text, line, pos):
+    '''`pos = [col, row]` for the tile, or none if `pos` is None.'''
+    lines = _lines(text)
+    index, start, end = _block(lines, text, line)
+    own = _own_end(lines, start, end)
+    if pos is None:
+        _drop_pos(lines, start, own)
+    else:
+        value = f'[{int(pos[0])}, {int(pos[1])}]'
+        at = _find_key(lines, start + 1, own, 'pos')
+        if at is not None:
+            match = POS.match(lines[at].rstrip('\n'))
+            if match is None:
+                raise EditError('pos hat eine Schreibweise, die ich nicht '
+                                'sicher ändern kann')
+            lines[at] = f'{match[1]}{value}{match[2]}\n'
+        else:
+            after = None
+            for key in ('size', 'app', 'group'):
+                after = _find_key(lines, start + 1, own, key)
+                if after is not None:
+                    break
+            if after is None:
+                after = start
+            lines.insert(after + 1, _key_line(lines, start + 1, own, 'pos',
+                                              value))
+
+    def expect(data):
+        if pos is None:
+            data['tile'][index].pop('pos', None)
+        else:
+            data['tile'][index]['pos'] = [int(pos[0]), int(pos[1])]
+    return ''.join(lines), expect
+
+
 def set_group(text, line, group):
     '''Another group, and no `pos`: the old place rarely fits there.'''
     lines = _lines(text)
@@ -139,11 +186,7 @@ def set_group(text, line, group):
     if at is None:
         raise EditError('die Kachel hat keine group-Zeile')
     lines[at] = _replace_value(lines[at], 'group', toml_string(group))
-    pos = _find_key(lines, start + 1, own, 'pos')
-    if pos is not None:
-        if lines[pos].count('[') != lines[pos].count(']'):
-            raise EditError('pos steht über mehrere Zeilen')
-        del lines[pos]
+    _drop_pos(lines, start, own)
 
     def expect(data):
         data['tile'][index]['group'] = group
@@ -166,6 +209,84 @@ def remove_tile(text, line):
         if not data['tile']:
             del data['tile']
     return ''.join(lines), expect
+
+
+def _with_comment(lines, start):
+    '''Where a tile starts together with the comment right above its
+    header (no blank line between): that comment is about the tile. Only
+    if a blank line (or the file's start) comes before it -- comment lines
+    stuck to the tile above, like a key commented out, belong to that.'''
+    first = start
+    while first > 0 and lines[first - 1].lstrip().startswith('#'):
+        first -= 1
+    if first > 0 and lines[first - 1].strip():
+        return start
+    return first
+
+
+def _trailing_blanks(lines):
+    count = 0
+    while count < len(lines) and not lines[-1 - count].strip():
+        count += 1
+    return count
+
+
+def move_tile(text, line, before_line):
+    '''The tile on `line` -- shortcuts and the comment above it included,
+    without its `pos` -- before the tile on `before_line`, or behind the
+    last other tile of its group if that is None. Only the order of the
+    file changes; the wall then fits the group in again.'''
+    lines = _lines(text)
+    tiles = _data(text).get('tile', [])
+    found = blocks(text)
+    if len(found) != len(tiles):
+        raise EditError('die Kacheln in der Datei sind nicht eindeutig')
+    index, start, end = _block(lines, text, line)
+    if before_line is not None:
+        if before_line == line:
+            raise EditError('eine Kachel kann nicht vor sich selbst')
+        target, at, _end = _block(lines, text, before_line)
+        at = _with_comment(lines, at)
+        new_index = target if target < index else target - 1
+    else:
+        group = tiles[index].get('group')
+        last = None
+        for i, raw in enumerate(tiles):
+            if i != index and isinstance(raw, dict) \
+                    and raw.get('group') == group:
+                last = i
+        if last is None:
+            raise EditError('die Gruppe hat keine andere Kachel')
+        at = found[last][1]
+        new_index = last + 1 if last < index else last
+
+    first = _with_comment(lines, start)
+    chunk = lines[first:end]
+    _drop_pos(chunk, start - first, _own_end(chunk, start - first,
+                                              len(chunk)))
+    rest = lines[:first] + lines[end:]
+    if at >= end:
+        at -= end - first
+    # Two blank lines meeting where the block was: one is enough.
+    if 0 < first < len(rest) and not rest[first].strip() \
+            and not rest[first - 1].strip():
+        del rest[first]
+        if at > first:
+            at -= 1
+    if at > 0 and rest[at - 1].strip():
+        chunk = ['\n'] + chunk
+    if at < len(rest) and rest[at].strip():
+        chunk = chunk + ['\n']
+    rest[at:at] = chunk
+    # The last block moved away: no more blank lines at the end than before.
+    while _trailing_blanks(rest) > _trailing_blanks(lines):
+        del rest[-1]
+
+    def expect(data):
+        tile = data['tile'].pop(index)
+        tile.pop('pos', None)
+        data['tile'].insert(new_index, tile)
+    return ''.join(rest), expect
 
 
 def add_tile(text, group, app):

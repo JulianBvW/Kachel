@@ -158,6 +158,115 @@ new, problem = run(SAMPLE, (te.set_group, 8, 'Neu'), (te.add_group, 'Neu'))
 check('move into a new group: both changes, checked together', problem is None
       and te._data(new)['groups'][-1] == 'Neu' and te._data(new)['tile'][0]['group'] == 'Neu', problem)
 
+section('move_tile')
+MOVES = """\
+groups = ["A", "B"]
+
+# about a
+[[tile]]
+group = "A"
+app   = "a"
+pos   = [2, 0]
+
+[[tile.shortcut]]
+name    = "s"
+command = "s"
+
+[[tile]]
+group = "B"
+app   = "x"
+
+# about b
+
+[[tile]]
+group = "A"
+app   = "b"
+
+[[tile]]
+group = "A"
+app   = "c"
+"""
+heads = [s + 1 for s, _ in te.blocks(MOVES)]       # a, x, b, c
+
+
+def order(text):
+    return [t['app'] for t in te._data(text)['tile']]
+
+
+new, problem = run(MOVES, (te.move_tile, heads[0], None))
+check('behind the last of its group, over a tile of another group',
+      problem is None and order(new) == ['x', 'b', 'c', 'a'], (problem, order(new or MOVES)))
+check('the comment right above goes along, the shortcut too, pos goes',
+      new.rstrip().endswith('# about a\n[[tile]]\ngroup = "A"\napp   = "a"\n\n'
+                            '[[tile.shortcut]]\nname    = "s"\ncommand = "s"')
+      and 'pos' not in new, new)
+check('one blank line between blocks, none doubled', '\n\n\n' not in new
+      and new.startswith('groups = ["A", "B"]\n\n[[tile]]'), new)
+new, problem = run(MOVES, (te.move_tile, heads[3], heads[0]))
+check('to the front: before a, and before the comment about a',
+      problem is None and order(new) == ['c', 'a', 'x', 'b']
+      and '\n[[tile]]\ngroup = "A"\napp   = "c"\n\n# about a\n' in new, (problem, new))
+check('a comment after a blank line stays where it was',
+      new.index('# about b') < new.index('app   = "b"'), new)
+new, problem = run(MOVES, (te.move_tile, heads[2], heads[3]))
+check('one step: before the next', problem is None and order(new) == ['a', 'x', 'b', 'c'], (problem, new))
+new, problem = run(MOVES, (te.move_tile, heads[3], heads[2]))
+check('and back', problem is None and order(new) == ['a', 'x', 'c', 'b'], (problem, new))
+new, problem = run(MOVES, (te.move_tile, heads[2], heads[2]))
+check('before itself: refused', new is None and problem, problem)
+tail = 'groups = ["A"]\n\n[[tile]]\ngroup = "A"\napp = "a"\n\n[[tile]]\ngroup = "A"\napp = "c"\n'
+new, problem = run(tail, (te.move_tile, 7, 3))
+check('the last block moved to the front: no blank line left at the end',
+      problem is None and new.endswith('app = "a"\n'), repr(new))
+stuck = 'groups = ["A"]\n\n[[tile]]\ngroup = "A"\napp = "x"\n# size = "large"\n[[tile]]\ngroup = "A"\napp = "m"\n'
+new, problem = run(stuck, (te.move_tile, 7, 3))
+check('a comment stuck to the tile above stays with that one',
+      problem is None and new.endswith('app = "x"\n# size = "large"\n'), repr(new))
+lonely = 'groups = ["A", "B"]\n\n[[tile]]\ngroup = "B"\napp = "x"\n'
+new, problem = run(lonely, (te.move_tile, 3, None))
+check('alone in its group: refused', new is None and problem, problem)
+
+for text in (MOVES, SAMPLE):
+    data = te._data(text)['tile']
+    lines = [s + 1 for s, _ in te.blocks(text)]
+    bad = []
+    for i, line in enumerate(lines):
+        same = [j for j, t in enumerate(data) if t['group'] == data[i]['group'] and j != i]
+        for target in [lines[j] for j in same] + ([None] if same else []):
+            new, problem = run(text, (te.move_tile, line, target))
+            if problem:
+                bad.append((line, target, problem))
+            elif new.count('\n\n\n') > text.count('\n\n\n'):
+                bad.append((line, target, 'blank lines doubled'))
+            else:
+                start, end = te.blocks(text)[i]
+                kept = [l for n, l in enumerate(text.splitlines())
+                        if l.strip() and not (start <= n < end and l.startswith('pos'))]
+                if sorted(l for l in new.splitlines() if l.strip()) != sorted(kept):
+                    bad.append((line, target, 'lines changed'))
+    check('every move of every tile: checked, no line lost or added', not bad, bad)
+
+section('set_pos')
+new, problem = run(SAMPLE, (te.set_pos, 8, (2, 4)))
+check('replaces the pos, keeps the alignment',
+      problem is None and diff(SAMPLE, new) == ['-pos   = [0, 0]', '+pos   = [2, 4]'], diff(SAMPLE, new or ''))
+editor = [s + 1 for s, _ in te.blocks(SAMPLE)][1]
+new, problem = run(SAMPLE, (te.set_pos, editor, (5, 0)))
+check('adds one behind app, lined up with group',
+      problem is None and diff(SAMPLE, new) == ['+pos   = [5, 0]'], diff(SAMPLE, new or ''))
+thunder = [s + 1 for s, _ in te.blocks(SAMPLE)][2]
+new, problem = run(SAMPLE, (te.set_pos, thunder, (0, 9)))
+check('behind size if there is one, not in a shortcut',
+      problem is None and '"medium"\npos   = [0, 9]\n' in new, new)
+new, problem = run(SAMPLE, (te.set_pos, 8, None))
+check('None takes it away', problem is None and diff(SAMPLE, new) == ['-pos   = [0, 0]'], diff(SAMPLE, new or ''))
+new, problem = run(SAMPLE, (te.set_pos, thunder, (1, 1)), (te.set_pos, 8, None))
+check('several, from the bottom up', problem is None and diff(SAMPLE, new) == [
+    '-pos   = [0, 0]', '+pos   = [1, 1]'], diff(SAMPLE, new or ''))
+odd = 'groups = ["A"]\n\n[[tile]]\ngroup = "A"\napp = "x"\npos = [\n  1, 2]\n'
+new, problem = run(odd, (te.set_pos, 3, (0, 0)))
+check('a pos over two lines: refused', new is None and problem, problem)
+
 section('verify refuses')
 inline = 'groups = ["A"]\ntile = [{group = "A", app = "x", size = "small"}]\n'
 new, problem = run(inline, (te.set_size, 2, 'large'))

@@ -131,7 +131,7 @@ menu:
 | On | |
 |---|---|
 | an app | its own actions (New Window …), pin to the wall ▸ group (or take it off), add to the panel, to the desktop, to the favourites, uninstall |
-| a tile | its actions, size, move to another group ▸, take off the wall (with its shortcuts), show in `tiles.toml`, and the app entries above |
+| a tile | its actions, size, move to another group ▸, move within the group, take off the wall (with its shortcuts), show in `tiles.toml`, and the app entries above |
 | a file | open with ▸, show in folder, copy path, open a terminal there, move to the trash (click twice) |
 | the empty wall | edit `tiles.toml` |
 
@@ -140,6 +140,13 @@ lines of that tile, its `size` or `group`, or the `groups` list change;
 comments and layout stay. Each change is read back before it is written,
 and one that cannot be made safely is not written at all. Esc closes the
 menu; the menu key or Shift+F10 opens it for the selected result.
+
+**Move** picks a tile up: a faint copy follows the pointer, a dashed
+frame shows the cell it would land on, and its group gets empty rows below
+for the time being. A left click puts it there and the others make room;
+a right click or Esc puts it back. Where a new order of the tiles in
+`tiles.toml` gets it there, only the order changes; otherwise the tile
+gets a `pos`, and a tile with a `pos` in its way loses its own.
 
 ## Configuration
 

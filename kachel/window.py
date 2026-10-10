@@ -162,7 +162,8 @@ class KachelWindow(Gtk.Window):
         main.pack_start(self.rail, False, False, 0)
         self.wall = TileWall(on_activate=self._on_activate,
                              on_shortcut=self._on_shortcut,
-                             on_menu=self._open_menu)
+                             on_menu=self._open_menu,
+                             on_move=self._on_tile_moved)
         self.applist = AppList(
             on_activate=self._on_list_app,
             on_menu=lambda app, event: self._open_menu(('app', app), event))
@@ -470,6 +471,7 @@ class KachelWindow(Gtk.Window):
     def show_list(self, shown):
         '''Slide the app list in, or the wall back. The switch in the
         search bar follows through pages.on_page_changed.'''
+        self.wall.cancel_move()
         self.pages.show_page(1 if shown else 0)
         self._log('app list shown' if shown else 'wall shown')
 
@@ -604,6 +606,9 @@ class KachelWindow(Gtk.Window):
             self._edit(*ops)
         elif id == 'size':
             self._edit((tomledit.set_size, line, payload))
+        elif id == 'move':
+            self.menu.close()
+            self.wall.start_move(what[1])
         elif id == 'unpin':
             if not lines:
                 self.menu.close()
@@ -626,6 +631,20 @@ class KachelWindow(Gtk.Window):
         elif id == 'uninstall':
             self.menu.close()
             self._done(app.name, cinnamon.uninstall(app.info))
+
+    def _on_tile_moved(self, tile, spot):
+        '''A tile picked up with "Verschieben" was put down elsewhere: by
+        a new order, or by `pos` (and the tiles in its way lose theirs).'''
+        if spot.pos is None:
+            before = spot.before.line if spot.before is not None else None
+            self._edit((tomledit.move_tile, tile.line, before))
+            return
+        changes = [(tile.line, spot.pos)] + [(t.line, None)
+                                              for t in spot.loosen]
+        # From the bottom up: a line added or dropped in one tile leaves
+        # the line numbers of the tiles above it as they are.
+        changes.sort(reverse=True, key=lambda change: change[0])
+        self._edit(*[(tomledit.set_pos, line, pos) for line, pos in changes])
 
     def _file_menu(self, id, result, payload, timestamp):
         path = result.value
@@ -874,6 +893,7 @@ class KachelWindow(Gtk.Window):
         first action page and nothing armed. No pill, no suggestions.'''
         self._stop_files()
         self.menu.close()
+        self.wall.cancel_move()
         self.searchbar.reset()
         self.suggestions.hide_list()
         self.wall.reset_hover()
@@ -928,6 +948,12 @@ class KachelWindow(Gtk.Window):
                 self.menu.close()
                 return True
             return not self.menu.typing
+        if self.wall.moving and not event.is_modifier:
+            # A tile in hand: Esc puts it back and nothing else. Any other
+            # key puts it back too, and then does what it always does.
+            self.wall.cancel_move()
+            if key == Gdk.KEY_Escape:
+                return True
         if key == Gdk.KEY_Escape:
             self.hide_kachel()
             return True

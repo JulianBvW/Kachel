@@ -5,6 +5,9 @@ tile goes is plain arithmetic and tested on its own. This file only turns
 rectangles into widgets.
 '''
 
+import math
+
+import cairo
 import gi
 
 gi.require_version('Gtk', '3.0')
@@ -12,7 +15,7 @@ gi.require_version('Gdk', '3.0')
 gi.require_version('Pango', '1.0')
 from gi.repository import Gdk, Gtk, Pango  # noqa: E402
 
-from . import icons, layout  # noqa: E402
+from . import icons, layout, move  # noqa: E402
 from .contextmenu import is_right_click  # noqa: E402
 
 # Icon size in pixels for each tile size.
@@ -32,6 +35,12 @@ TEXT_LINE_INDENT = 2
 SHORTCUT_GLYPH = 19
 DEFAULT_SHORTCUT_ICON = 'ms:bolt'
 
+# Moving a tile.
+GHOST_ALPHA = 0.6       # the copy at the pointer
+LIFTED_ALPHA = 0.4      # the tile at its old place
+FRAME_DASH = (6, 4)
+FRAME_RADIUS = 4        # as the tiles'
+
 EMPTY_HINT = ('Noch keine Kacheln — angeheftet wird in '
               '~/.config/kachel/tiles.toml')
 
@@ -42,16 +51,24 @@ class TileWall(Gtk.Box):
     `on_activate(tile, app, timestamp)` is called when a tile is clicked,
     `on_shortcut(shortcut, timestamp)` when one of its shortcut buttons is,
     `on_menu(what, event)` on a right-click: what is ('tile', tile, app) or
-    ('wall',) for the empty space.
+    ('wall',) for the empty space. `on_move(tile, spot)` when a tile that
+    was picked up with start_move is put down somewhere else; `spot` (a
+    move.Spot) says where and how.
     '''
 
-    def __init__(self, on_activate, on_shortcut, on_menu=None):
+    def __init__(self, on_activate, on_shortcut, on_menu=None, on_move=None):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self._on_activate = on_activate
         self._on_shortcut = on_shortcut
         self._on_menu = on_menu or (lambda what, event: None)
+        self._on_move = on_move or (lambda tile, spot: None)
         self._tile_buttons = []
         self._lines = []
+        self._groups = []
+        self._grid_origins = {}   # group name -> (x, y) of its grid
+        self._boxes = {}          # id(tile) -> (its box, its rect)
+        self._height = 0
+        self._moving = None       # the tile in hand, or None
 
         # One line for what is wrong with the settings. Hidden when nothing is.
         self._error = Gtk.Label(xalign=0)
@@ -72,6 +89,9 @@ class TileWall(Gtk.Box):
         self._scroller.get_style_context().add_class('kachel-wall')
         self._scroller.set_policy(Gtk.PolicyType.NEVER,
                                   Gtk.PolicyType.AUTOMATIC)
+        # The wheel moves the wall under a resting pointer: aim again.
+        self._scroller.get_vadjustment().connect(
+            'value-changed', lambda _a: self._aim_at_pointer())
         # Catches the right-clicks that no tile took: the empty wall.
         space = Gtk.EventBox()
         space.set_visible_window(False)
@@ -99,15 +119,25 @@ class TileWall(Gtk.Box):
         `apps` is the AppIndex, `width` the width of the tile area,
         `columns` the number of group columns, `base` the settings folder.
         '''
+        self.cancel_move(relayout=False)   # the tile in hand goes with the rest
         for child in self._fixed.get_children():
             self._fixed.remove(child)
             child.destroy()
         self._tile_buttons = []   # for reset_hover
         self._lines = []          # (text line, its normal text)
+        self._groups = groups
+        self._columns = columns
+        self._width = width
+        self._grid_origins = {}
+        self._boxes = {}
+        self._headers = {}
 
         arrangement = layout.arrange(groups, columns)
         for name, rect in arrangement.headers:
+            self._grid_origins[name] = (
+                rect.x, rect.y + layout.HEADER_HEIGHT + layout.HEADER_GAP)
             header = Gtk.Label(label=name, xalign=0)
+            self._headers[name] = header
             header.get_style_context().add_class('kachel-group-header')
             header.set_ellipsize(Pango.EllipsizeMode.END)
             header.set_size_request(rect.width, rect.height)
@@ -118,9 +148,16 @@ class TileWall(Gtk.Box):
             app = apps.get(tile.app) if tile.app else None
             button = self._make_tile(tile, app, rect, base)
             self._fixed.put(button, rect.x, rect.y)
+            self._boxes[id(tile)] = (button, rect)
 
+        self._height = arrangement.height
         self._fixed.set_size_request(width, arrangement.height)
         self._fixed.show_all()
+
+        # Over everything, but only while a tile is in hand.
+        self._layer = MoveLayer(self._moved, self._dropped,
+                                self.cancel_move)
+        self._fixed.put(self._layer, 0, 0)
 
         empty = not arrangement.tiles and not arrangement.headers
         self._hint.set_visible(empty)
@@ -323,6 +360,110 @@ class TileWall(Gtk.Box):
                                       + (count - 1 - index) * step)
             self._float(overlay, button, passive=False)
 
+    # -- moving a tile -----------------------------------------------------
+
+    @property
+    def moving(self):
+        return self._moving is not None
+
+    def group_tiles(self, tile):
+        '''The tiles of `tile`'s group on the wall, in the file's order.'''
+        for _name, placements in self._groups:
+            tiles = [p.tile for p in placements]
+            if any(t is tile for t in tiles):
+                return tiles
+        return []
+
+    def start_move(self, tile):
+        '''Pick `tile` up: a copy follows the pointer, a dashed frame shows
+        where it would land, a left click puts it there. Its group gets
+        empty rows below for the time being, room to put it under all.'''
+        self.cancel_move()
+        if id(tile) not in self._boxes:
+            return
+        found = move.spots(self.group_tiles(tile), tile)
+        box, rect = self._boxes[id(tile)]
+        self.reset_hover()
+        ghost = _snapshot(box, rect)
+        self._moving = tile
+        self._spots = found
+        self._spot = None
+        self._relayout({tile.group: move.extra_rows(tile.size)})
+        # Every click on the visible wall must reach the layer, also below
+        # a short wall.
+        visible = self._scroller.get_allocated_height()
+        self._layer.set_size_request(self._width, max(self._height, visible))
+        self._layer.lift(ghost, rect)
+        box.set_opacity(LIFTED_ALPHA)
+        self._layer.show()
+        # Above the tiles' own windows, whatever GTK restacked meanwhile.
+        self._layer.get_window().raise_()
+        self._aim_at_pointer()
+
+    def cancel_move(self, relayout=True):
+        '''Put the tile back where it was, nothing changed. Without
+        `relayout` the empty rows stay: a rebuild follows anyway.'''
+        if self._moving is None:
+            return
+        found = self._boxes.get(id(self._moving))
+        if found:
+            found[0].set_opacity(1)
+        self._moving = None
+        self._layer.hide()
+        self._layer.set_size_request(-1, -1)
+        if relayout:
+            self._relayout({})
+
+    def _relayout(self, extra):
+        '''Put headers and tiles where layout.arrange says, with `extra`
+        empty rows for some groups; the widgets stay, they only move.'''
+        arrangement = layout.arrange(self._groups, self._columns, extra)
+        for name, rect in arrangement.headers:
+            self._grid_origins[name] = (
+                rect.x, rect.y + layout.HEADER_HEIGHT + layout.HEADER_GAP)
+            self._fixed.move(self._headers[name], rect.x, rect.y)
+        for placement, rect in arrangement.tiles:
+            box, _old = self._boxes[id(placement.tile)]
+            self._boxes[id(placement.tile)] = (box, rect)
+            self._fixed.move(box, rect.x, rect.y)
+        self._height = arrangement.height
+        self._fixed.set_size_request(self._width, arrangement.height)
+
+    def _aim_at_pointer(self):
+        if self._moving is not None:
+            found = self._pointer()
+            if found:
+                self._moved(*found)
+
+    def _pointer(self):
+        '''Where the pointer is, in the wall's coordinates.'''
+        window = self._layer.get_window() or self._fixed.get_window()
+        seat = Gdk.Display.get_default().get_default_seat()
+        if window is None or seat is None:
+            return None
+        _window, x, y, _mask = window.get_device_position(seat.get_pointer())
+        if window is not self._layer.get_window():
+            allocation = self._fixed.get_allocation()
+            x, y = x - allocation.x, y - allocation.y
+        return x, y
+
+    def _moved(self, x, y):
+        tile = self._moving
+        if tile is None:
+            return
+        ox, oy = self._grid_origins[tile.group]
+        self._spot = move.nearest(self._spots, tile.size, x - ox, y - oy)
+        left, top, width, height = move.rect(self._spot, tile.size)
+        self._layer.aim(x, y, (ox + left, oy + top, width, height))
+
+    def _dropped(self):
+        tile, spot = self._moving, self._spot
+        if tile is not None and spot is not None and spot.change:
+            self.cancel_move(relayout=False)
+            self._on_move(tile, spot)
+        else:
+            self.cancel_move()
+
     def scroll_to_top(self):
         '''For the next show: the wall starts at its first row again.'''
         self._scroller.get_vadjustment().set_value(0)
@@ -345,3 +486,90 @@ class TileWall(Gtk.Box):
 
     def _clicked(self, _button, tile, app):
         self._on_activate(tile, app, Gtk.get_current_event_time())
+
+
+def _snapshot(box, rect):
+    '''The tile as it looks now, as a picture, before it is dimmed.'''
+    # As sharp as the screen: on a scaled display, scaled pixels.
+    scale = box.get_scale_factor()
+    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, rect.width * scale,
+                                 rect.height * scale)
+    surface.set_device_scale(scale, scale)
+    box.draw(cairo.Context(surface))
+    return surface
+
+
+class MoveLayer(Gtk.DrawingArea):
+    '''Over the whole wall while a tile is in hand: it takes the pointer,
+    so no tile starts or lights up, and draws the frame where the tile
+    would land and the tile's copy at the pointer. The wheel goes through
+    to the wall, which still scrolls.
+
+    `on_motion(x, y)` as the pointer moves, `on_drop()` on a left click,
+    `on_cancel()` on a right one.'''
+
+    def __init__(self, on_motion, on_drop, on_cancel):
+        super().__init__()
+        self._on_motion = on_motion
+        self._on_drop = on_drop
+        self._on_cancel = on_cancel
+        self._ghost = None
+        self._ghost_size = (0, 0)
+        self._pointer = None
+        self._frame = None
+        self.add_events(Gdk.EventMask.POINTER_MOTION_MASK
+                        | Gdk.EventMask.BUTTON_PRESS_MASK)
+        self.connect('motion-notify-event', self._motion)
+        self.connect('button-press-event', self._pressed)
+        self.connect('draw', self._draw)
+        self.set_no_show_all(True)
+
+    def lift(self, ghost, rect):
+        self._ghost = ghost
+        self._ghost_size = (rect.width, rect.height)
+        self._pointer = None
+        self._frame = None
+
+    def aim(self, x, y, frame):
+        self._pointer = (x, y)
+        self._frame = frame
+        self.queue_draw()
+
+    def _motion(self, _widget, event):
+        self._on_motion(event.x, event.y)
+        return True
+
+    def _pressed(self, _widget, event):
+        if event.type != Gdk.EventType.BUTTON_PRESS:
+            return True           # the rest of a double click
+        if event.button == 1:
+            self._on_motion(event.x, event.y)
+            self._on_drop()
+        elif event.button == 3:
+            self._on_cancel()
+        return True
+
+    def _draw(self, _widget, cr):
+        if self._frame is not None:
+            x, y, width, height = self._frame
+            _rounded(cr, x + 1, y + 1, width - 2, height - 2, FRAME_RADIUS)
+            cr.set_source_rgba(1, 1, 1, 0.55)
+            cr.set_line_width(2)
+            cr.set_dash(FRAME_DASH)
+            cr.stroke()
+            cr.set_dash(())
+        if self._ghost is not None and self._pointer is not None:
+            width, height = self._ghost_size
+            cr.set_source_surface(self._ghost, self._pointer[0] - width / 2,
+                                  self._pointer[1] - height / 2)
+            cr.paint_with_alpha(GHOST_ALPHA)
+        return False
+
+
+def _rounded(cr, x, y, width, height, radius):
+    cr.new_sub_path()
+    cr.arc(x + width - radius, y + radius, radius, -math.pi / 2, 0)
+    cr.arc(x + width - radius, y + height - radius, radius, 0, math.pi / 2)
+    cr.arc(x + radius, y + height - radius, radius, math.pi / 2, math.pi)
+    cr.arc(x + radius, y + radius, radius, math.pi, 3 * math.pi / 2)
+    cr.close_path()
