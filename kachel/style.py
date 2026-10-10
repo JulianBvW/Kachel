@@ -293,6 +293,68 @@ button.kachel-pill.extra {{
   min-height: 24px;
 }}
 
+.kachel-menu {{
+  background-color: rgba(44, 44, 48, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.38);
+  padding: 6px;
+}}
+button.kachel-menu-row,
+button.kachel-menu-row:hover,
+button.kachel-menu-row:active,
+button.kachel-menu-size,
+button.kachel-menu-size:hover,
+button.kachel-menu-size:active {{
+  background-image: none;
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+  text-shadow: none;
+  outline: none;
+  border-radius: 6px;
+  padding: 0 10px;
+  min-height: 34px;
+  color: #F3F3F3;
+}}
+button.kachel-menu-row:hover,
+button.kachel-menu-size:hover {{
+  background-color: rgba(255, 255, 255, 0.10);
+}}
+button.kachel-menu-row:disabled {{
+  color: rgba(255, 255, 255, 0.35);
+}}
+button.kachel-menu-row:disabled .ms-icon {{
+  color: rgba(255, 255, 255, 0.35);
+}}
+button.kachel-menu-row.armed {{
+  background-color: rgba(239, 102, 97, 0.5);
+}}
+button.kachel-menu-size {{
+  padding: 0 4px;
+  min-height: 0;
+  font-size: {secondary}pt;
+  background-color: rgba(255, 255, 255, 0.04);
+}}
+button.kachel-menu-size.selected {{
+  background-color: rgba(255, 255, 255, 0.16);
+  color: #FFFFFF;
+}}
+.kachel-menu.debug-hover button.kachel-menu-row,
+.kachel-menu.debug-hover button.kachel-menu-size {{
+  background-color: rgba(255, 255, 255, 0.10);
+}}
+entry.kachel-menu-entry {{
+  background-color: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  box-shadow: none;
+  color: #F3F3F3;
+  caret-color: #FFFFFF;
+  min-height: 30px;
+  padding: 0 8px;
+}}
+
 .kachel-suggestions {{
   background-color: rgba(44, 44, 48, 0.97);
   border: 1px solid rgba(255, 255, 255, 0.10);

@@ -1,6 +1,8 @@
 '''The window itself: a pane of dark glass in the middle of the screen.'''
 
 import math
+import os
+import shlex
 import time
 from pathlib import Path
 
@@ -11,11 +13,14 @@ gi.require_version('Gtk', '3.0')
 gi.require_version('Gdk', '3.0')
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from . import (blur, config, files, geometry, icons,  # noqa: E402
-               launch, listmodel, query, railmodel, search, settings, style)
+from . import (blur, cinnamon, config, files, geometry,  # noqa: E402
+               icons, launch, listmodel, query, railmodel, search, settings,
+               style, tomledit)
 from .applist import AppList  # noqa: E402
 from .apps import AppIndex  # noqa: E402
+from .contextmenu import ContextMenu  # noqa: E402
 from .filesearch import FileSearch, Recent  # noqa: E402
+from .menumodel import Target, menu_for  # noqa: E402
 from .rail import Rail  # noqa: E402
 from .results import ResultList  # noqa: E402
 from .searchbar import SearchBar  # noqa: E402
@@ -23,6 +28,7 @@ from .slide import Slider  # noqa: E402
 from .suggest import Suggestions  # noqa: E402
 from .tilewall import TileWall  # noqa: E402
 from .tooltip import Tooltip  # noqa: E402
+from .wallfile import WallFile  # noqa: E402
 
 # X11-only, and only needed for a fresh server timestamp. Kept optional so the
 # import does not bring the whole program down on a session without it.
@@ -110,6 +116,10 @@ class KachelWindow(Gtk.Window):
         self._file_query = ('', (), ())   # text, recent hits shown, extras
         self._general = settings.General()
         self._wall_settings = settings.Wall()
+        self._wallfile = WallFile(self._config_dir)
+        self._groups = []          # as assembled: [(name, [Placement])]
+        self._pinned = {}          # app ID -> group it is on the wall in
+        self._menu_what = None     # what the open menu is about
         self._rail_settings = settings.default_rail()
         self._rail_shown = None   # (folders, pages, messages) on the rail
         self._build_body()
@@ -151,8 +161,11 @@ class KachelWindow(Gtk.Window):
                          tooltip=self.tooltip)
         main.pack_start(self.rail, False, False, 0)
         self.wall = TileWall(on_activate=self._on_activate,
-                             on_shortcut=self._on_shortcut)
-        self.applist = AppList(on_activate=self._on_list_app)
+                             on_shortcut=self._on_shortcut,
+                             on_menu=self._open_menu)
+        self.applist = AppList(
+            on_activate=self._on_list_app,
+            on_menu=lambda app, event: self._open_menu(('app', app), event))
         # The wall and the app list slide past each other (Design §10);
         # the rail and the search bar stay put. Sized in _apply_size.
         self.pages = Slider(1, 1, duration=440)
@@ -167,7 +180,10 @@ class KachelWindow(Gtk.Window):
         # keeps its hover and its clicks.
         overlay.set_overlay_pass_through(self.tooltip, True)
 
-        self.results = ResultList(on_activate=self._on_result)
+        self.results = ResultList(
+            on_activate=self._on_result,
+            on_menu=lambda result, event, row: self._open_menu(
+                ('result', result), event, row))
         for side in ('top', 'bottom', 'start', 'end'):
             getattr(self.results, f'set_margin_{side}')(10)
 
@@ -183,6 +199,9 @@ class KachelWindow(Gtk.Window):
         top = Gtk.Overlay()
         top.add(root)
         top.add_overlay(self.suggestions)
+        self._top = top
+        self.menu = ContextMenu(top, on_pick=self._on_menu_pick,
+                                on_close=self.searchbar.focus)
         self.add(top)
         # Shown now, so mapping the window later is all it takes.
         top.show_all()
@@ -202,10 +221,12 @@ class KachelWindow(Gtk.Window):
         messages = self._setup_problems + messages
         if general is not None:
             self._general = general
-        wall, more = settings.load_tiles(self._config_dir)
+        wall, more, text = settings.load_tiles(self._config_dir,
+                                               with_text=True)
         messages += more
         if wall is not None:
             self._wall_settings = wall
+            self._wallfile.remember(text)
 
         rail, more = settings.load_rail(self._config_dir)
         messages += more
@@ -220,7 +241,9 @@ class KachelWindow(Gtk.Window):
         messages += self._build_rail()
         t1 = time.monotonic()
         visible = self._apps.visible()
-        self.applist.show_apps(visible, listmodel.pinned_groups(groups))
+        self._groups = groups
+        self._pinned = listmodel.pinned_groups(groups)
+        self.applist.show_apps(visible, self._pinned)
         self._log(f'app list built: {len(visible)} apps, '
                   f'{(time.monotonic() - t1) * 1000:.1f} ms')
         area = self._width - config.RAIL_WIDTH
@@ -462,6 +485,191 @@ class KachelWindow(Gtk.Window):
     def _on_list_app(self, app, timestamp):
         self._done(app.name, launch.launch_app(app.info, timestamp))
 
+    # -- the right-click menu ---------------------------------------------
+
+    def _open_menu(self, what, event=None, widget=None):
+        '''what: ('tile', tile, app), ('app', app), ('result', result) or
+        ('wall',). At the pointer for a click, at `widget` for a key.'''
+        target = self._target(what)
+        if target is None:
+            return
+        if event is not None:
+            _ok, ox, oy = self._top.get_window().get_origin()
+            x, y = int(event.x_root - ox), int(event.y_root - oy)
+        else:
+            found = widget.translate_coordinates(
+                self._top, 24, widget.get_allocated_height())
+            x, y = found if found else (24, 24)
+        self.tooltip.hide_now()
+        self.suggestions.hide_list()
+        self._menu_what = what
+        self.menu.open(menu_for(target), x, y)
+
+    def _target(self, what):
+        '''Gather the facts menu_for needs.'''
+        groups = tuple(self._wall_settings.groups)
+        kind = what[0]
+        if kind == 'wall':
+            return Target('wall')
+        if kind == 'result':
+            result = what[1]
+            if result.kind == 'file':
+                return Target('file', folder=result.folder,
+                              openers=launch.openers(result.value,
+                                                     result.folder))
+            if result.kind != 'app':
+                return None
+            what, kind = ('app', result.app), 'app'
+        if kind == 'tile':
+            tile, app = what[1], what[2]
+            target = Target('tile', tile_group=tile.group,
+                            tile_size=tile.size, groups=groups)
+        else:
+            app = what[1]
+            target = Target('app', groups=groups,
+                            pinned_in=self._pinned.get(app.id))
+        if app is not None:
+            info = app.info
+            target.app_id = app.id
+            target.actions = tuple((a, info.get_action_name(a))
+                                   for a in info.list_actions())
+            target.in_panel = cinnamon.in_panel(info)
+            target.on_desktop = cinnamon.on_desktop(info)
+            target.favorite = cinnamon.is_favorite(app.id)
+            target.can_uninstall = cinnamon.can_uninstall(info)
+        return target
+
+    def _menu_app(self):
+        what = self._menu_what
+        if what[0] == 'tile':
+            return what[2]
+        if what[0] == 'result':
+            return what[1].app
+        return what[1]
+
+    def _tile_lines(self):
+        '''The header lines the menu is about: the clicked tile, or for an
+        app every tile of it on the wall -- the lowest first, so removing
+        one leaves the lines above it where they are.'''
+        what = self._menu_what
+        if what[0] == 'tile':
+            return [what[1].line]
+        app = self._menu_app()
+        return sorted((placement.tile.line for _name, placements in
+                       self._groups for placement in placements
+                       if placement.tile.app == app.id), reverse=True)
+
+    def _edit(self, *operations):
+        '''Change tiles.toml; the folder watcher then rebuilds the wall.'''
+        self.menu.close()
+        problem = self._wallfile.change(*operations)
+        if problem:
+            self._log(problem)
+            self.reload()             # the file may have changed meanwhile
+            self.wall.notice(problem)
+        else:
+            # The folder watcher would see it too -- unless tiles.toml is a
+            # link to a file elsewhere.
+            self._schedule_reload()
+
+    def _on_menu_pick(self, entry, payload):
+        what = self._menu_what
+        timestamp = Gtk.get_current_event_time()
+        id = entry.id
+        if what is None:
+            return
+        if what[0] == 'result' and what[1].kind == 'file':
+            self._file_menu(id, what[1], payload, timestamp)
+            return
+        if id == 'edit-toml':
+            self.menu.close()
+            self._done('tiles.toml', launch.edit_file(
+                self._wallfile.path, None, timestamp))
+            return
+
+        app = self._menu_app()
+        lines = self._tile_lines()
+        line = lines[0] if lines else None
+        if id in ('pin', 'pin-new'):
+            # Without '.desktop', as people write it by hand.
+            ops = [(tomledit.add_tile, payload,
+                    app.id.removesuffix('.desktop'))]
+            if id == 'pin-new' and payload not in self._wall_settings.groups:
+                ops.append((tomledit.add_group, payload))
+            self._edit(*ops)
+        elif id in ('group', 'group-new'):
+            ops = [(tomledit.set_group, line, payload)]
+            if id == 'group-new' and payload not in self._wall_settings.groups:
+                ops.append((tomledit.add_group, payload))
+            self._edit(*ops)
+        elif id == 'size':
+            self._edit((tomledit.set_size, line, payload))
+        elif id == 'unpin':
+            if not lines:
+                self.menu.close()
+                self._report('diese App ist nicht auf der Wand')
+                return
+            self._edit(*[(tomledit.remove_tile, n) for n in lines])
+        elif id == 'action':
+            self.menu.close()
+            self._done(app.name, launch.launch_action(app.info, payload,
+                                                      timestamp))
+        elif id == 'panel':
+            self.menu.close()
+            cinnamon.add_to_panel(app.info, self._report)
+        elif id == 'desktop':
+            self.menu.close()
+            self._report(cinnamon.add_to_desktop(app.info))
+        elif id in ('favorite', 'unfavorite'):
+            self.menu.close()
+            self._report(cinnamon.set_favorite(app.id, id == 'favorite'))
+        elif id == 'uninstall':
+            self.menu.close()
+            self._done(app.name, cinnamon.uninstall(app.info))
+
+    def _file_menu(self, id, result, payload, timestamp):
+        path = result.value
+        if id == 'trash':
+            self.menu.close()
+            try:
+                Gio.File.new_for_path(path).trash(None)
+            except GLib.Error as error:
+                self._report(f'Papierkorb ging nicht: {error.message}')
+                return
+            self._log(f'trashed {path}')
+            self._recent.forget(path)
+            # The search again, so the row is gone.
+            self._on_search_changed(self.searchbar.text,
+                                    self.searchbar.scope,
+                                    self.searchbar.extras)
+            return
+        self.menu.close()
+        if id == 'open-with':
+            self._done(result.title, launch.open_with(payload, path,
+                                                      timestamp))
+        elif id == 'reveal':
+            self._done(result.title, launch.show_in_folder(path, timestamp))
+        elif id == 'copy-path':
+            clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+            clipboard.set_text(path, -1)
+            clipboard.store()
+            self._done(result.title, None)
+        elif id == 'terminal':
+            folder = path if result.folder else os.path.dirname(path)
+            self._done(result.title, launch.run_in_terminal(
+                f'cd {shlex.quote(folder)}'))
+
+    def _report(self, message):
+        '''A short note for the user, when something did not quite work.'''
+        if message:
+            self._log(message)
+            self.wall.notice(message)
+            app = self.get_application()
+            if app is not None and not self.get_visible():
+                notification = Gio.Notification.new('Kachel')
+                notification.set_body(message)
+                app.send_notification(None, notification)
+
     def _done(self, what, problem):
         '''After anything was started, copied or opened: say how it went,
         then get out of the way.'''
@@ -665,9 +873,11 @@ class KachelWindow(Gtk.Window):
         search field, the main view with the wall (not the app list), the
         first action page and nothing armed. No pill, no suggestions.'''
         self._stop_files()
+        self.menu.close()
         self.searchbar.reset()
         self.suggestions.hide_list()
         self.wall.reset_hover()
+        self.wall.scroll_to_top()
         self.rail.reset()
         self.pages.show_page(0, animate=False)
         self.applist.reset()
@@ -709,8 +919,22 @@ class KachelWindow(Gtk.Window):
         '''
         key = event.keyval
         ctrl = bool(event.state & Gdk.ModifierType.CONTROL_MASK)
+        if self.menu.shown:
+            # The menu first: Esc closes only the menu (its "new group"
+            # field must be able to cancel). Other keys belong to that
+            # field if it is there, and to nobody otherwise -- typing must
+            # not change the search under an open menu.
+            if key == Gdk.KEY_Escape:
+                self.menu.close()
+                return True
+            return not self.menu.typing
         if key == Gdk.KEY_Escape:
             self.hide_kachel()
+            return True
+        shift = bool(event.state & Gdk.ModifierType.SHIFT_MASK)
+        if (key == Gdk.KEY_Menu or (shift and key == Gdk.KEY_F10)) \
+                and self._body.get_visible_child_name() == 'results':
+            self.results.menu_for_selected()
             return True
         if ctrl and key == Gdk.KEY_BackSpace:
             # Instead of the field's own "delete a word": everything goes,

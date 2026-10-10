@@ -8,6 +8,7 @@ gi.require_version('Pango', '1.0')
 from gi.repository import Gdk, Gio, Gtk, Pango  # noqa: E402
 
 from . import icons  # noqa: E402
+from .contextmenu import is_right_click  # noqa: E402
 
 ROW_HEIGHT = 54
 ROW_GAP = 2
@@ -34,10 +35,12 @@ class ResultList(Gtk.Box):
     "enter" it, and Enter would start the third hit instead of the first.
     '''
 
-    def __init__(self, on_activate):
+    def __init__(self, on_activate, on_menu=None):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         self.get_style_context().add_class('kachel-results')
         self._on_activate = on_activate
+        # on_menu(result, event or None, row) on a right-click or the menu key
+        self._on_menu = on_menu or (lambda result, event, row: None)
         self._results = []
         self._rows = []
         self._selected = 0
@@ -158,6 +161,19 @@ class ResultList(Gtk.Box):
     def activate_selected(self, timestamp, reveal=False):
         return self.activate(self._selected, timestamp, reveal)
 
+    def _pressed(self, row, event, index):
+        if is_right_click(event):
+            self.select(index, scroll=False)
+            self._on_menu(self._results[index], event, row)
+            return True
+        return False
+
+    def menu_for_selected(self):
+        '''The menu key: the menu of the selected row, at the row.'''
+        if self._results and self._selected < len(self._rows):
+            self._on_menu(self._results[self._selected], None,
+                          self._rows[self._selected])
+
     def _pointer_position(self):
         seat = Gdk.Display.get_default().get_default_seat()
         pointer = seat.get_pointer() if seat is not None else None
@@ -222,6 +238,7 @@ class ResultList(Gtk.Box):
         row.add(content)
         row.add_events(Gdk.EventMask.POINTER_MOTION_MASK)
         row.connect('motion-notify-event', self._moved, index)
+        row.connect('button-press-event', self._pressed, index)
         row.connect('clicked', lambda *_: self.activate(
             index, Gtk.get_current_event_time(), reveal=ctrl_held()))
         return row

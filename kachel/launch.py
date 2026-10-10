@@ -25,6 +25,67 @@ def launch_app(info, timestamp):
     return None
 
 
+def _context(timestamp):
+    context = Gdk.Display.get_default().get_app_launch_context()
+    context.set_timestamp(timestamp)
+    return context
+
+
+def launch_action(info, action, timestamp):
+    '''One of the actions in an app's .desktop file ("New Window").'''
+    try:
+        info.launch_action(action, _context(timestamp))
+    except GLib.Error as error:
+        return error.message
+    return None
+
+
+def open_with(app_id, path, timestamp):
+    '''Open `path` with the app `app_id` instead of the default one.'''
+    info = Gio.DesktopAppInfo.new(app_id)
+    if info is None:
+        return f'{app_id} gibt es nicht'
+    try:
+        info.launch([Gio.File.new_for_path(path)], _context(timestamp))
+    except GLib.Error as error:
+        return error.message
+    return None
+
+
+def openers(path, folder=False):
+    '''((app ID, name), ...) that can open `path`, the default first.'''
+    if folder:
+        content_type = 'inode/directory'
+    else:
+        try:
+            content_type = Gio.File.new_for_path(path).query_info(
+                'standard::content-type', Gio.FileQueryInfoFlags.NONE,
+                None).get_content_type()
+        except GLib.Error:
+            content_type, _uncertain = Gio.content_type_guess(path, None)
+    default = Gio.AppInfo.get_default_for_type(content_type, False)
+    found = [default] if default else []
+    for info in Gio.AppInfo.get_recommended_for_type(content_type):
+        if not any(info.get_id() == f.get_id() for f in found):
+            found.append(info)
+    return tuple((info.get_id(), info.get_display_name()) for info in found
+                 if info.get_id())
+
+
+def edit_file(path, line, timestamp):
+    '''Open a text file in the default editor; with xed, at `line`.'''
+    editor = Gio.AppInfo.get_default_for_type('text/plain', False)
+    if editor is not None and editor.get_id() == 'org.x.editor.desktop' \
+            and line:
+        try:
+            GLib.spawn_async(['xed', f'+{line}', str(path)],
+                             flags=GLib.SpawnFlags.SEARCH_PATH)
+            return None
+        except GLib.Error:
+            pass
+    return open_path(str(path), timestamp)
+
+
 def launch_command(command):
     '''Run a command line through the shell, detached. None or the error.
 

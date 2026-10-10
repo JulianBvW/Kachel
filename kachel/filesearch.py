@@ -43,6 +43,11 @@ class Recent:
         '''Newest use first.'''
         return self._hits
 
+    def forget(self, path):
+        '''A file gone this moment (to the trash, say), before GTK's list
+        notices.'''
+        self._hits = [hit for hit in self._hits if hit.path != path]
+
     def _refresh(self):
         items = sorted(self._manager.get_items(),
                        key=lambda item: item.get_modified(), reverse=True)

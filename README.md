@@ -123,6 +123,24 @@ right. The letters down the right edge jump to their section -- click one,
 or hold the button and drag along them. The button again slides the wall
 back.
 
+## Right-click
+
+Right-click a tile, a result, an app in the list or the empty wall for a
+menu:
+
+| On | |
+|---|---|
+| an app | its own actions (New Window …), pin to the wall ▸ group (or take it off), add to the panel, to the desktop, to the favourites, uninstall |
+| a tile | its actions, size, move to another group ▸, take off the wall (with its shortcuts), show in `tiles.toml`, and the app entries above |
+| a file | open with ▸, show in folder, copy path, open a terminal there, move to the trash (click twice) |
+| the empty wall | edit `tiles.toml` |
+
+Everything that changes the wall edits `tiles.toml` in place: only the
+lines of that tile, its `size` or `group`, or the `groups` list change;
+comments and layout stay. Each change is read back before it is written,
+and one that cannot be made safely is not written at all. Esc closes the
+menu; the menu key or Shift+F10 opens it for the selected result.
+
 ## Configuration
 
 No settings dialog: three plain TOML files in `~/.config/kachel/`, written

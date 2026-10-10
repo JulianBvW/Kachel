@@ -13,6 +13,7 @@ gi.require_version('Pango', '1.0')
 from gi.repository import Gdk, Gtk, Pango  # noqa: E402
 
 from . import icons, layout  # noqa: E402
+from .contextmenu import is_right_click  # noqa: E402
 
 # Icon size in pixels for each tile size.
 ICON_SIZES = {'small': 22, 'medium': 36, 'wide': 40, 'large': 72}
@@ -39,13 +40,16 @@ class TileWall(Gtk.Box):
     '''Message line on top, the scrolling wall below.
 
     `on_activate(tile, app, timestamp)` is called when a tile is clicked,
-    `on_shortcut(shortcut, timestamp)` when one of its shortcut buttons is.
+    `on_shortcut(shortcut, timestamp)` when one of its shortcut buttons is,
+    `on_menu(what, event)` on a right-click: what is ('tile', tile, app) or
+    ('wall',) for the empty space.
     '''
 
-    def __init__(self, on_activate, on_shortcut):
+    def __init__(self, on_activate, on_shortcut, on_menu=None):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self._on_activate = on_activate
         self._on_shortcut = on_shortcut
+        self._on_menu = on_menu or (lambda what, event: None)
         self._tile_buttons = []
         self._lines = []
 
@@ -68,7 +72,12 @@ class TileWall(Gtk.Box):
         self._scroller.get_style_context().add_class('kachel-wall')
         self._scroller.set_policy(Gtk.PolicyType.NEVER,
                                   Gtk.PolicyType.AUTOMATIC)
-        self._scroller.add(self._fixed)
+        # Catches the right-clicks that no tile took: the empty wall.
+        space = Gtk.EventBox()
+        space.set_visible_window(False)
+        space.add(self._fixed)
+        space.connect('button-press-event', self._pressed, ('wall',))
+        self._scroller.add(space)
 
         self._hint = Gtk.Label(label=EMPTY_HINT)
         self._hint.get_style_context().add_class('kachel-hint')
@@ -161,8 +170,15 @@ class TileWall(Gtk.Box):
         box.get_style_context().add_class('tile-box')
         box.add(overlay)
         box.connect('enter-notify-event', self._ring, button, True)
+        box.connect('button-press-event', self._pressed, ('tile', tile, app))
         box.connect('leave-notify-event', self._ring, button, False)
         return box
+
+    def _pressed(self, _widget, event, what):
+        if is_right_click(event):
+            self._on_menu(what, event)
+            return True
+        return False
 
     @staticmethod
     def _ring(_box, event, button, entering):
@@ -306,6 +322,16 @@ class TileWall(Gtk.Box):
                 button.set_margin_end(SHORTCUT_PAD
                                       + (count - 1 - index) * step)
             self._float(overlay, button, passive=False)
+
+    def scroll_to_top(self):
+        '''For the next show: the wall starts at its first row again.'''
+        self._scroller.get_vadjustment().set_value(0)
+
+    def notice(self, text):
+        '''A note in the message line, until the wall is built again.'''
+        self._error.set_text(text)
+        self._error.set_tooltip_text(text)
+        self._error.show()
 
     def reset_hover(self):
         '''Rings off, names back. Clicking a button hides the window under

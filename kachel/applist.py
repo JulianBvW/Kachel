@@ -14,6 +14,7 @@ from gi.repository import Gdk, GLib, Gtk, Pango  # noqa: E402
 
 from . import icons, listmodel  # noqa: E402
 from .slide import EASE_OUT_SLOW  # noqa: E402
+from .contextmenu import is_right_click  # noqa: E402
 
 SECTION_HEIGHT = 30
 ROW_HEIGHT = 42
@@ -33,9 +34,10 @@ class AppList(Gtk.Box):
     its own: the list starts right under the search bar, and the switch
     there is the way back.'''
 
-    def __init__(self, on_activate):
+    def __init__(self, on_activate, on_menu=None):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self._on_activate = on_activate
+        self._on_menu = on_menu or (lambda app, event: None)
         self._sections = []        # [(letter, header label)]
         self._present = set()
         self._scroll = None        # (from, to, start or None) while gliding
@@ -171,9 +173,16 @@ class AppList(Gtk.Box):
         self._rows[app.id] = where
 
         row.add(content)
+        row.connect('button-press-event', self._pressed, app)
         row.connect('clicked', lambda *_: self._on_activate(
             app, Gtk.get_current_event_time()))
         return row
+
+    def _pressed(self, _row, event, app):
+        if is_right_click(event):
+            self._on_menu(app, event)
+            return True
+        return False
 
     # -- scrolling -------------------------------------------------------
 

@@ -784,14 +784,18 @@ def load_general(folder):
     return parse_general(data)
 
 
-def load_tiles(folder):
-    '''-> (Wall or None, messages). None: not TOML, keep the old one.'''
+def load_tiles(folder, with_text=False):
+    '''-> (Wall or None, messages). None: not TOML, keep the old one.
+    `with_text` adds the text that was read as a third value -- the line
+    numbers in the Wall belong to exactly that text.'''
     data, text, problem = _read(Path(folder) / config.TILES_FILE)
     if data is None:
-        return None, [problem]
-    if not data and not text:
-        return Wall(), []   # no file at all: an empty wall, nothing to say
-    return parse_tiles(data, text)
+        result = None, [problem]
+    elif not data and not text:
+        result = Wall(), []   # no file at all: an empty wall, nothing to say
+    else:
+        result = parse_tiles(data, text)
+    return result + (text,) if with_text else result
 
 
 def load_rail(folder):
