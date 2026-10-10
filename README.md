@@ -12,8 +12,9 @@ Large tiles carry shortcuts: a terminal tile with buttons for
 
 ## Status
 
-Work in progress. What runs so far is the frame: a resident service and an
-empty pane of glass that `F7` shows and hides.
+Work in progress. What runs so far: a resident service, a pane of glass that
+`F7` shows and hides, and the tile wall, read from a file and started with a
+click. Search, the icon rail and the shortcuts on large tiles are next.
 
 ## Requirements
 
@@ -37,7 +38,8 @@ next login.
 
 The package is copied to `~/.local/share/kachel`, so the clone can be moved or
 deleted afterwards. `--in-place` wires it to the current folder instead, which
-is what you want while working on it. `--uninstall` takes everything back off.
+is what you want while working on it. `--uninstall` takes everything back off,
+except your settings in `~/.config/kachel`.
 
 Cinnamon only: the shortcut goes through Cinnamon's own keybindings.
 
@@ -50,6 +52,62 @@ Cinnamon only: the shortcut goes through Cinnamon's own keybindings.
 
 Clicking anywhere else hides it too. Hidden is not closed: the service keeps
 running, which is why the window is there the instant the key is pressed.
+
+## Configuration
+
+No settings dialog: three plain TOML files in `~/.config/kachel/`, written
+by hand. Saved changes apply at once. A mistake never stops Kachel -- it is
+shown as one line above the wall, the wrong value is replaced by its
+default, and everything else still counts. A file that is not TOML at all
+leaves the last good wall in place.
+
+On first start Kachel writes commented skeletons. It never overwrites a
+file that is there.
+
+**`kachel.toml`** -- the window:
+
+```toml
+[window]
+columns = 2     # tile columns, 1-4; the width follows (1: 426, 2: 772 px)
+height  = 680
+```
+
+**`tiles.toml`** -- the wall. `groups` is required; it names the groups and
+puts them in order. Every tile says which group it belongs to:
+
+```toml
+groups = ["Work", "Games"]
+
+[[tile]]
+group = "Work"
+app   = "org.gnome.Terminal"     # .desktop ID; the .desktop may be left off
+size  = "large"                  # small | medium | wide | large
+pos   = [0, 0]                   # [column 0-5, row], optional
+
+[[tile]]
+group = "Games"
+app   = "steam"
+size  = "wide"
+
+[[tile]]
+group   = "Work"
+name    = "Notes"                # a tile without an app needs name + command
+icon    = "theme:accessories-text-editor"
+command = "xed ~/notes.txt"
+```
+
+Tiles without a `pos` are fitted in, in file order: the first free spot
+from the top left. Two helpers:
+
+```
+/usr/bin/python3 -m kachel --list-apps   # every app ID, to pin
+/usr/bin/python3 -m kachel --grid        # where every tile ended up, and why
+```
+
+`--grid` draws each group's grid and marks the tiles that were fitted in
+`(auto)` -- copy that position into `pos` to pin it there.
+
+**`rail.toml`** -- folders and actions for the icon rail. Not read yet.
 
 ## Blur
 

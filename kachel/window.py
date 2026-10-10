@@ -8,9 +8,11 @@ import gi
 
 gi.require_version('Gtk', '3.0')
 gi.require_version('Gdk', '3.0')
-from gi.repository import Gdk, Gtk  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from . import blur, config, geometry  # noqa: E402
+from . import blur, config, geometry, launch, settings, style  # noqa: E402
+from .apps import AppIndex  # noqa: E402
+from .tilewall import TileWall  # noqa: E402
 
 # X11-only, and only needed for a fresh server timestamp. Kept optional so the
 # import does not bring the whole program down on a session without it.
@@ -47,9 +49,10 @@ class KachelWindow(Gtk.Window):
     there is no startup left to pay for at the moment the key is pressed.
     '''
 
-    def __init__(self, verbose=False):
+    def __init__(self, config_dir=None, verbose=False):
         super().__init__(type=Gtk.WindowType.TOPLEVEL)
         self._verbose = verbose
+        self._config_dir = config_dir or config.CONFIG_DIR
 
         # When the window last went away for losing the focus, as
         # time.monotonic(). None while it is up or was hidden any other way.
@@ -68,12 +71,10 @@ class KachelWindow(Gtk.Window):
         self.set_skip_pager_hint(True)
         self.set_keep_above(True)
 
-        # Fixed size, placed by us. The width comes from the tile grid.
-        self._width = geometry.window_width(config.COLUMNS)
-        self._height = config.HEIGHT
+        # Fixed size, placed by us. The width comes from the tile grid; both
+        # are set for real by _apply_size once the settings are read.
+        self._width = self._height = None
         self.set_position(Gtk.WindowPosition.NONE)
-        self.set_default_size(self._width, self._height)
-        self.set_size_request(self._width, self._height)
         self.set_resizable(False)
 
         self._blurred = False
@@ -89,10 +90,153 @@ class KachelWindow(Gtk.Window):
         # Hide instead -- the only way out is the quit action.
         self.connect('delete-event', lambda *_: self.hide_kachel() or True)
 
+        self._style = style.Style()
+        self._apps = AppIndex()
+        self._general = settings.General()
+        self._wall_settings = settings.Wall()
+        self._build_body()
+
+        written, self._setup_problems = settings.ensure_files(
+            self._config_dir)
+        for path in written:
+            self._log(f'wrote the skeleton {path}')
+        self._reload_source = None
+        self._apps_stale = False
+        self._watch()
+        self.reload()
+
         # Realise early so there is a GdkWindow to ask for a server timestamp
         # the first time we are shown.
         self.realize()
-        self._log(f'{self._width}x{self._height}')
+
+    # -- contents --------------------------------------------------------
+
+    def _build_body(self):
+        '''Search bar on top, rail on the left, the wall in the rest.
+
+        Phase 2 fills only the wall. The other two are empty strips of their
+        final size, so the geometry is right from now on and phases 3 and 5
+        only have to put things into them.
+        '''
+        root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        root.get_style_context().add_class('kachel-root')
+
+        searchbar = Gtk.Box()
+        searchbar.get_style_context().add_class('kachel-searchbar')
+        searchbar.set_size_request(-1, config.SEARCHBAR_HEIGHT)
+        root.pack_start(searchbar, False, False, 0)
+
+        body = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        rail = Gtk.Box()
+        rail.get_style_context().add_class('kachel-rail')
+        rail.set_size_request(config.RAIL_WIDTH, -1)
+        body.pack_start(rail, False, False, 0)
+
+        self.wall = TileWall(on_activate=self._on_activate)
+        body.pack_start(self.wall, True, True, 0)
+        root.pack_start(body, True, True, 0)
+
+        self.add(root)
+        # Shown now, so mapping the window later is all it takes.
+        root.show_all()
+
+    def reload(self):
+        '''Read the settings and rebuild the wall.
+
+        A file that is not TOML at all keeps what was there before; its
+        complaint goes into the message line. Everything else counts as far
+        as it is right, and what is wrong is reported.
+        '''
+        t0 = time.monotonic()
+        if self._apps_stale:
+            self._apps.reload()
+            self._apps_stale = False
+        general, messages = settings.load_general(self._config_dir)
+        messages = self._setup_problems + messages
+        if general is not None:
+            self._general = general
+        wall, more = settings.load_tiles(self._config_dir)
+        messages += more
+        if wall is not None:
+            self._wall_settings = wall
+
+        groups, more = settings.assemble(self._wall_settings,
+                                         self._apps.resolve)
+        messages += more
+
+        self._apply_size()
+        area = self._width - config.RAIL_WIDTH
+        self.wall.show_wall(groups, self._apps, messages, area,
+                            self._general.columns, self._config_dir)
+
+        count = sum(len(p) for _name, p in groups)
+        self._log(f'wall built: {len(groups)} groups, {count} tiles, '
+                  f'{len(messages)} messages, '
+                  f'{(time.monotonic() - t0) * 1000:.1f} ms')
+        for message in messages:
+            self._log(f'  {message}')
+
+    def _apply_size(self):
+        width = geometry.window_width(self._general.columns)
+        height = self._general.height
+        if (width, height) == (self._width, self._height):
+            return
+        self._width, self._height = width, height
+        self.set_default_size(width, height)
+        self.set_size_request(width, height)
+        self.resize(width, height)
+        if self.get_visible():
+            self.move(*self._placement())
+        self._log(f'size {width}x{height}')
+
+    def _watch(self):
+        '''Rebuild when a settings file is saved or an app is installed.
+
+        The folder is watched, not the files: editors often save by writing
+        a new file and renaming it over the old one, and a watch on the old
+        file would quietly die with it.
+        '''
+        folder = Gio.File.new_for_path(str(self._config_dir))
+        self._monitor = folder.monitor_directory(
+            Gio.FileMonitorFlags.WATCH_MOVES, None)
+        self._monitor.connect('changed', self._on_folder_changed)
+
+        self._app_monitor = Gio.AppInfoMonitor.get()
+        self._app_monitor.connect('changed', self._on_apps_changed)
+
+    def _on_folder_changed(self, _monitor, file, other, _event):
+        names = {f.get_basename() for f in (file, other) if f is not None}
+        if any(name.endswith('.toml') for name in names):
+            self._schedule_reload()
+
+    def _on_apps_changed(self, _monitor):
+        # An install fires this many times in a row. Reading every .desktop
+        # file once per burst is enough, so it waits for the debounced reload.
+        self._apps_stale = True
+        self._schedule_reload()
+
+    def _schedule_reload(self):
+        if self._reload_source is not None:
+            GLib.source_remove(self._reload_source)
+        self._reload_source = GLib.timeout_add(config.RELOAD_DELAY_MS,
+                                               self._reload_now)
+
+    def _reload_now(self):
+        self._reload_source = None
+        self.reload()
+        return GLib.SOURCE_REMOVE
+
+    def _on_activate(self, tile, app, timestamp):
+        '''A tile was clicked: start it, then get out of the way.'''
+        if tile.command:
+            problem = launch.launch_command(tile.command)
+        else:
+            problem = launch.launch_app(app.info, timestamp)
+        if problem:
+            self._log(f'could not start {tile.label}: {problem}')
+        else:
+            self._log(f'started {tile.label}')
+        self.hide_kachel()
 
     # -- appearance ------------------------------------------------------
 

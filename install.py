@@ -398,6 +398,9 @@ def uninstall():
         INSTALL_DIR.rmdir()
         print(f'  Removed {INSTALL_DIR}')
 
+    if config.CONFIG_DIR.is_dir():
+        print(f'\n  Your settings in {config.CONFIG_DIR} are still there -- '
+              'they are yours,\n  and installing again picks them up.')
     print('\n  A BlurCinnamon entry for Kachel, if you made one, is still '
           'there.\n  It is yours to remove; this script never touched it.\n')
 

@@ -22,12 +22,13 @@ class KachelApplication(Gtk.Application):
         gapplication action io.github.julianbvw.Kachel toggle
     '''
 
-    def __init__(self, verbose=False):
+    def __init__(self, config_dir=None, verbose=False):
         super().__init__(
             application_id=config.APP_ID,
             flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE,
         )
         self._verbose = verbose
+        self._config_dir = config_dir
         self.window = None
 
     # -- lifecycle -------------------------------------------------------
@@ -40,7 +41,8 @@ class KachelApplication(Gtk.Application):
         # would pay for a cold start.
         self.hold()
 
-        self.window = KachelWindow(verbose=self._verbose)
+        self.window = KachelWindow(config_dir=self._config_dir,
+                                   verbose=self._verbose)
         self.add_window(self.window)
 
         for name, handler in (

@@ -1,11 +1,14 @@
 '''Window size and place. Pure arithmetic, no GTK, so it can be tested.'''
 
-# The tile grid the width has to land on. A rail on the left, padding on both
-# sides of the tile area, and groups of 318 px with 28 px between them.
-RAIL = 60
-PADDING = 24
-GROUP = 318
-GROUP_GAP = 28
+from . import config, layout
+
+# The tile grid the width has to land on: the rail on the left, padding on
+# both sides of the tile area, and groups with gaps between them. Taken from
+# where they are defined, so the width and the wall can never disagree.
+RAIL = config.RAIL_WIDTH
+PADDING = layout.PAD_SIDE
+GROUP = layout.GROUP_WIDTH
+GROUP_GAP = layout.GROUP_GAP
 
 
 def window_width(columns):
