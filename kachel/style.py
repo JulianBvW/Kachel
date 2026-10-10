@@ -198,6 +198,74 @@ button.kachel-search-button:hover .ms-icon {{
   color: #FFFFFF;
 }}
 
+button.kachel-list-button,
+button.kachel-list-button:hover,
+button.kachel-list-button:active,
+button.kachel-list-row,
+button.kachel-list-row:hover,
+button.kachel-list-row:active {{
+  background-image: none;
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+  text-shadow: none;
+  outline: none;
+  border-radius: 6px;
+  padding: 0;
+  min-width: 0;
+  min-height: 0;
+}}
+button.kachel-list-button .ms-icon {{
+  color: rgba(255, 255, 255, 0.75);
+}}
+button.kachel-list-button:hover {{
+  background-color: rgba(255, 255, 255, 0.10);
+}}
+button.kachel-list-button:hover .ms-icon,
+button.kachel-list-button.active .ms-icon {{
+  color: #FFFFFF;
+}}
+button.kachel-list-button.active {{
+  background-color: rgba(255, 255, 255, 0.12);
+}}
+
+.kachel-list-section {{
+  padding: 0 10px;
+}}
+button.kachel-list-row {{
+  padding: 0 10px;
+}}
+button.kachel-list-row:hover {{
+  background-color: rgba(255, 255, 255, 0.08);
+}}
+.kachel-list-plate {{
+  background-color: rgba(255, 255, 255, 0.08);
+  border-radius: 5px;
+}}
+.kachel-list-name {{
+  font-size: {name}pt;
+  color: #F3F3F3;
+}}
+.kachel-list-group {{
+  font-size: {secondary}pt;
+  color: rgba(255, 255, 255, 0.45);
+}}
+.kachel-alpha {{
+  font-size: {secondary}pt;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.22);
+  border-radius: 4px;
+}}
+.kachel-alpha.present {{
+  color: rgba(255, 255, 255, 0.62);
+}}
+.kachel-alpha.current {{
+  color: #FFFFFF;
+}}
+.kachel-alpha.hover {{
+  background-color: rgba(255, 255, 255, 0.12);
+}}
+
 entry.kachel-search-entry {{
   background: none;
   border: none;

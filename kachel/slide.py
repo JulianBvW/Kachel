@@ -99,6 +99,16 @@ class Slider(Gtk.Layout):
         self._strip.show_all()
         self.show_page(0, animate=False)
 
+    def resize(self, width, height):
+        '''A new size for the window and every page; the page in view
+        stays in view.'''
+        self._page_width, self._height = width, height
+        self.set_size_request(width, height)
+        for child in self._strip.get_children():
+            child.set_size_request(width, height)
+        self._stop()
+        self._set_offset(-self._page * width)
+
     def show_page(self, index, animate=True):
         '''Bring page `index` into view. A new target while sliding starts
         from where the strip is now, so nothing jumps.'''

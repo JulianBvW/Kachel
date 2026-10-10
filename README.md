@@ -15,8 +15,8 @@ Large tiles carry shortcuts: a terminal tile with buttons for
 Work in progress. What runs so far: a resident service, a pane of glass that
 `F7` shows and hides, the tile wall read from a file with shortcut buttons
 on its large tiles, the search over every installed app, with a
-calculator, and the icon rail with folders and actions. The app list is
-next.
+calculator, the icon rail with folders and actions, and the list of all
+apps.
 
 ## Requirements
 
@@ -66,6 +66,14 @@ or not, matched by name, generic name, keywords and program name -- and by
 letters in order, so `gmp` finds GIMP. A sum like `3,5*2` is worked out
 (comma or point, as you like); Enter copies the answer. With no hit at all,
 Enter searches the web instead.
+
+## All apps
+
+The button on the right of the search bar slides the wall aside for a list
+of every app, A to Z. Apps that are on the wall show their group on the
+right. The letters down the right edge jump to their section -- click one,
+or hold the button and drag along them. The button again slides the wall
+back.
 
 ## Configuration
 

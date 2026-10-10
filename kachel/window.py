@@ -12,11 +12,13 @@ gi.require_version('Gdk', '3.0')
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from . import (blur, config, geometry, icons, launch,  # noqa: E402
-               railmodel, search, settings, style)
+               listmodel, railmodel, search, settings, style)
+from .applist import AppList  # noqa: E402
 from .apps import AppIndex  # noqa: E402
 from .rail import Rail  # noqa: E402
 from .results import ResultList  # noqa: E402
 from .searchbar import SearchBar  # noqa: E402
+from .slide import Slider  # noqa: E402
 from .tilewall import TileWall  # noqa: E402
 from .tooltip import Tooltip  # noqa: E402
 
@@ -132,7 +134,8 @@ class KachelWindow(Gtk.Window):
         root.get_style_context().add_class('kachel-root')
 
         self.searchbar = SearchBar(on_changed=self._on_search_changed,
-                                   on_close=self.hide_kachel)
+                                   on_close=self.hide_kachel,
+                                   on_list=self._on_list_button)
         root.pack_start(self.searchbar, False, False, 0)
 
         main = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
@@ -142,7 +145,14 @@ class KachelWindow(Gtk.Window):
         main.pack_start(self.rail, False, False, 0)
         self.wall = TileWall(on_activate=self._on_activate,
                              on_shortcut=self._on_shortcut)
-        main.pack_start(self.wall, True, True, 0)
+        self.applist = AppList(on_activate=self._on_list_app)
+        # The wall and the app list slide past each other (Design §10);
+        # the rail and the search bar stay put. Sized in _apply_size.
+        self.pages = Slider(1, 1, duration=440)
+        self.pages.set_pages([self.wall, self.applist])
+        self.pages.on_page_changed = \
+            lambda page: self.searchbar.set_list_active(page == 1)
+        main.pack_start(self.pages, True, True, 0)
         overlay = Gtk.Overlay()
         overlay.add(main)
         overlay.add_overlay(self.tooltip)
@@ -196,6 +206,11 @@ class KachelWindow(Gtk.Window):
 
         self._apply_size()
         messages += self._build_rail()
+        t1 = time.monotonic()
+        visible = self._apps.visible()
+        self.applist.show_apps(visible, listmodel.pinned_groups(groups))
+        self._log(f'app list built: {len(visible)} apps, '
+                  f'{(time.monotonic() - t1) * 1000:.1f} ms')
         area = self._width - config.RAIL_WIDTH
         self.wall.show_wall(groups, self._apps, messages, area,
                             self._general.columns, self._config_dir)
@@ -237,6 +252,8 @@ class KachelWindow(Gtk.Window):
         self.set_default_size(width, height)
         self.set_size_request(width, height)
         self.resize(width, height)
+        self.pages.resize(width - config.RAIL_WIDTH,
+                          height - config.SEARCHBAR_HEIGHT)
         if self.get_visible():
             self.move(*self._placement())
         self._log(f'size {width}x{height}')
@@ -326,6 +343,33 @@ class KachelWindow(Gtk.Window):
         self._log(f'search {text!r}: {len(rows)} rows in '
                   f'{(time.monotonic() - t0) * 1000:.1f} ms')
 
+    def show_list(self, shown):
+        '''Slide the app list in, or the wall back. The switch in the
+        search bar follows through pages.on_page_changed.'''
+        self.pages.show_page(1 if shown else 0)
+        self._log('app list shown' if shown else 'wall shown')
+
+    def _on_list_button(self):
+        if self.searchbar.text:
+            # From the results straight to the list: the switch says
+            # "show me everything", so the search goes.
+            self.searchbar.clear()
+            self.show_list(True)
+        else:
+            self.show_list(self.pages.page == 0)
+
+    def _on_list_app(self, app, timestamp):
+        self._done(app.name, launch.launch_app(app.info, timestamp))
+
+    def _done(self, what, problem):
+        '''After anything was started, copied or opened: say how it went,
+        then get out of the way.'''
+        if problem:
+            self._log(f'could not run {what!r}: {problem}')
+        else:
+            self._log(f'ran {what!r}')
+        self.hide_kachel()
+
     def _on_result(self, result, timestamp):
         '''A result row was chosen: start, copy or open, then go away.'''
         if result.kind == 'app':
@@ -339,11 +383,7 @@ class KachelWindow(Gtk.Window):
             problem = None
         else:
             problem = launch.open_uri(result.value, timestamp)
-        if problem:
-            self._log(f'could not run {result.title!r}: {problem}')
-        else:
-            self._log(f'ran {result.title!r}')
-        self.hide_kachel()
+        self._done(result.title, problem)
 
     def _on_shortcut(self, shortcut, _timestamp):
         '''A shortcut button: its command, in a terminal or quietly.'''
@@ -359,21 +399,12 @@ class KachelWindow(Gtk.Window):
             problem = launch.run_in_terminal(entry.command)
         else:
             problem = launch.launch_command(entry.command)
-        if problem:
-            self._log(f'could not run {entry.name!r}: {problem}')
-        else:
-            self._log(f'ran {entry.name!r}')
-        self.hide_kachel()
+        self._done(entry.name, problem)
 
     def _on_folder(self, folder, timestamp):
         '''A folder on the rail: open it in the file manager.'''
         uri = Gio.File.new_for_path(str(folder.path)).get_uri()
-        problem = launch.open_uri(uri, timestamp)
-        if problem:
-            self._log(f'could not open {folder.path}: {problem}')
-        else:
-            self._log(f'opened {folder.path}')
-        self.hide_kachel()
+        self._done(str(folder.path), launch.open_uri(uri, timestamp))
 
     def _on_activate(self, tile, app, timestamp):
         '''A tile was clicked: start it, then get out of the way.'''
@@ -381,11 +412,7 @@ class KachelWindow(Gtk.Window):
             problem = launch.launch_command(tile.command)
         else:
             problem = launch.launch_app(app.info, timestamp)
-        if problem:
-            self._log(f'could not start {tile.label}: {problem}')
-        else:
-            self._log(f'started {tile.label}')
-        self.hide_kachel()
+        self._done(tile.label, problem)
 
     # -- appearance ------------------------------------------------------
 
@@ -528,11 +555,13 @@ class KachelWindow(Gtk.Window):
 
     def reset(self):
         '''Back to the state the next show should start from: an empty
-        search field, the main view, the first action page and nothing
-        armed. (Later also: no pills.)'''
+        search field, the main view with the wall (not the app list), the
+        first action page and nothing armed. (Later also: no pills.)'''
         self.searchbar.reset()
         self.wall.reset_hover()
         self.rail.reset()
+        self.pages.show_page(0, animate=False)
+        self.applist.reset()
         self._body.set_visible_child_name('main')
 
     def _placement(self):
@@ -576,7 +605,7 @@ class KachelWindow(Gtk.Window):
             return True
         if ctrl and key == Gdk.KEY_BackSpace:
             # Instead of the field's own "delete a word": everything goes,
-            # back to the wall.
+            # back to the wall or the app list, whichever was showing.
             self.searchbar.clear()
             return True
 
