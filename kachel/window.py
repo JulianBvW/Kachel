@@ -12,13 +12,14 @@ gi.require_version('Gdk', '3.0')
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from . import (blur, config, geometry, icons, launch,  # noqa: E402
-               listmodel, railmodel, search, settings, style)
+               listmodel, query, railmodel, search, settings, style)
 from .applist import AppList  # noqa: E402
 from .apps import AppIndex  # noqa: E402
 from .rail import Rail  # noqa: E402
 from .results import ResultList  # noqa: E402
 from .searchbar import SearchBar  # noqa: E402
 from .slide import Slider  # noqa: E402
+from .suggest import Suggestions  # noqa: E402
 from .tilewall import TileWall  # noqa: E402
 from .tooltip import Tooltip  # noqa: E402
 
@@ -135,7 +136,8 @@ class KachelWindow(Gtk.Window):
 
         self.searchbar = SearchBar(on_changed=self._on_search_changed,
                                    on_close=self.hide_kachel,
-                                   on_list=self._on_list_button)
+                                   on_list=self._on_list_button,
+                                   on_word=self._on_word)
         root.pack_start(self.searchbar, False, False, 0)
 
         main = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
@@ -171,9 +173,14 @@ class KachelWindow(Gtk.Window):
         self._body.add_named(self.results, 'results')
         root.pack_start(self._body, True, True, 0)
 
-        self.add(root)
+        # The @ suggestions float over everything below the search bar.
+        self.suggestions = Suggestions(on_pick=self._on_pick)
+        top = Gtk.Overlay()
+        top.add(root)
+        top.add_overlay(self.suggestions)
+        self.add(top)
         # Shown now, so mapping the window later is all it takes.
-        root.show_all()
+        top.show_all()
 
     def reload(self):
         '''Read the settings and rebuild the wall.
@@ -332,16 +339,30 @@ class KachelWindow(Gtk.Window):
             self.show_kachel()
         self.searchbar.set_text(text)
 
-    def _on_search_changed(self, text):
-        if not text.strip():
+    def _on_search_changed(self, text, scope=None):
+        if not text.strip() and scope is None:
             self._body.set_visible_child_name('main')
             return
         t0 = time.monotonic()
-        rows = search.results(text, self._apps.apps.values())
-        self.results.show_results(rows, search.header(text, rows))
+        code = scope.code if scope else None
+        # The sorted list is only needed for @a with nothing typed.
+        listed = self._apps.visible() if code == 'a' and not text.strip() \
+            else ()
+        rows = search.results(text, self._apps.apps.values(), code,
+                              listed=listed)
+        self.results.show_results(rows, search.header(text, rows, code))
         self._body.set_visible_child_name('results')
         self._log(f'search {text!r}: {len(rows)} rows in '
                   f'{(time.monotonic() - t0) * 1000:.1f} ms')
+
+    def _on_word(self, word):
+        '''The word at the cursor changed: offer scopes for an @word.'''
+        self.suggestions.show_for(query.suggestions(word))
+
+    def _on_pick(self, scope):
+        self.suggestions.hide_list()
+        self.searchbar.complete(scope)
+        self.searchbar.focus()
 
     def show_list(self, shown):
         '''Slide the app list in, or the wall back. The switch in the
@@ -350,7 +371,7 @@ class KachelWindow(Gtk.Window):
         self._log('app list shown' if shown else 'wall shown')
 
     def _on_list_button(self):
-        if self.searchbar.text:
+        if self.searchbar.text or self.searchbar.scope:
             # From the results straight to the list: the switch says
             # "show me everything", so the search goes.
             self.searchbar.clear()
@@ -556,8 +577,9 @@ class KachelWindow(Gtk.Window):
     def reset(self):
         '''Back to the state the next show should start from: an empty
         search field, the main view with the wall (not the app list), the
-        first action page and nothing armed. (Later also: no pills.)'''
+        first action page and nothing armed. No pill, no suggestions.'''
         self.searchbar.reset()
+        self.suggestions.hide_list()
         self.wall.reset_hover()
         self.rail.reset()
         self.pages.show_page(0, animate=False)
@@ -608,6 +630,23 @@ class KachelWindow(Gtk.Window):
             # back to the wall or the app list, whichever was showing.
             self.searchbar.clear()
             return True
+
+        if self.suggestions.shown:
+            # While @ suggestions are open, the arrows and Tab/Enter are
+            # theirs.
+            if key in (Gdk.KEY_Down, Gdk.KEY_KP_Down):
+                self.suggestions.move(1)
+                return True
+            if key in (Gdk.KEY_Up, Gdk.KEY_KP_Up):
+                self.suggestions.move(-1)
+                return True
+            if key in (Gdk.KEY_Tab, Gdk.KEY_Return, Gdk.KEY_KP_Enter,
+                       Gdk.KEY_ISO_Enter):
+                self.suggestions.pick_selected()
+                return True
+        if key in (Gdk.KEY_Tab, Gdk.KEY_ISO_Left_Tab) \
+                and (self.searchbar.text or self.searchbar.scope):
+            return True   # mid-search, Tab must not wander off the field
 
         if self._body.get_visible_child_name() != 'results':
             return False

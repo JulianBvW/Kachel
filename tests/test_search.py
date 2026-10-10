@@ -104,8 +104,28 @@ check('no hit: a web search instead', len(rows) == 1 and rows[0].kind == 'web'
 check('header says there is nothing', search.header('xyzqq', rows) == 'Keine Treffer für „xyzqq“')
 many = [A(f'App {i:02}') for i in range(20)]
 rows = search.results('app', many)
-check('at most nine rows', len(rows) == 9, len(rows))
-check('header counts the hits', search.header('app', rows) == '9 Treffer')
+check('no limit of nine any more', len(rows) == 20, len(rows))
+check('header counts all the hits', search.header('app', rows) == '20 Treffer')
+
+section('scopes')
+rows = search.results('2+2', apps, scope='a')
+check('@a: no calculator', all(r.kind == 'app' for r in rows), rows)
+rows = search.results('xyzqq', apps, scope='a')
+check('@a: no web search either', rows == [], rows)
+check('@a: no hits says so', search.header('xyzqq', rows, 'a') == 'Keine Treffer für „xyzqq“')
+listed = [A('Alpha'), A('Beta')]
+rows = search.results('  ', apps, scope='a', listed=listed)
+check('@a, nothing typed: every listed app, in order',
+      [r.title for r in rows] == ['Alpha', 'Beta'], rows)
+check('... and the header says so', search.header('', rows, 'a') == 'Alle Apps · 2')
+rows = search.results('minecraft !yt', apps, scope='w')
+check('@w: exactly one row, the bang goes along',
+      len(rows) == 1 and rows[0].kind == 'web'
+      and rows[0].value == 'https://duckduckgo.com/?q=minecraft+%21yt', rows)
+check('@w: no apps even if the word fits one', search.results('fire', apps, scope='w')[0].kind == 'web')
+check('@w, nothing typed: no rows', search.results('', apps, scope='w') == [])
+check('@w, nothing typed: a hint in the header',
+      search.header('', [], 'w') == 'Suchbegriff eingeben')
 check('the web address is escaped',
       search.web_url('a b&c') == 'https://duckduckgo.com/?q=a+b%26c')
 

@@ -1,7 +1,8 @@
 '''Searching the apps, and the calculator. Pure, so it can be tested.
 
 The search covers every installed app, pinned or not -- it has nothing to do
-with what is on the wall. Files come later, with @f.
+with what is on the wall. A scope pill narrows it: @a to the apps alone,
+@w to a web search. Files come later, with @f.
 '''
 
 import math
@@ -9,8 +10,6 @@ import re
 import unicodedata
 import urllib.parse
 from dataclasses import dataclass
-
-MAX_ROWS = 9
 
 
 # -- matching --------------------------------------------------------------
@@ -263,28 +262,50 @@ def web_url(query):
         query.strip())
 
 
-def results(query, apps, max_rows=MAX_ROWS):
-    '''The rows for `query`: the sum first, then the apps, at most nine.
+def results(query, apps, scope=None, listed=()):
+    '''The rows for `query` in `scope` (a query.Scope code, or None).
 
-    Without a single hit there is still a way on: searching the web.
+    No scope: the sum first, then every app that fits -- no limit, the
+    list loads them in portions -- and without a single hit a way on:
+    searching the web. 'a': apps only; with nothing typed, all of
+    `listed` (the visible apps, sorted). 'w': one row, the web search;
+    bangs like `!yt` simply go along in the query.
     '''
+    text = query.strip()
+    if scope == 'w':
+        if not text:
+            return []
+        return [Result('web', f'„{text}“ auf DuckDuckGo suchen',
+                       'Web', value=web_url(text))]
+    if scope == 'a' and not text:
+        return [_app_row(app) for app in listed]
+
     rows = []
-    answer = calculate(query)
-    if answer is not None:
-        rows.append(Result('calc', f'= {answer}', query.strip(),
-                           value=answer))
-    for app in rank(query, apps)[:max_rows - len(rows)]:
-        rows.append(Result('app', app.name, app.description or 'App',
-                           app=app))
-    if not rows and query.strip():
-        rows.append(Result('web', f'Im Web suchen: „{query.strip()}“',
+    if scope is None:
+        answer = calculate(query)
+        if answer is not None:
+            rows.append(Result('calc', f'= {answer}', text, value=answer))
+    rows += [_app_row(app) for app in rank(query, apps)]
+    if not rows and text and scope is None:
+        rows.append(Result('web', f'Im Web suchen: „{text}“',
                            'DuckDuckGo', value=web_url(query)))
     return rows
 
 
-def header(query, rows):
+def _app_row(app):
+    return Result('app', app.name, app.description or 'App', app=app)
+
+
+def header(query, rows, scope=None):
     '''The line above the rows: how many hits, or that there are none.'''
+    text = query.strip()
+    if scope == 'w' and not text:
+        return 'Suchbegriff eingeben'
+    if scope == 'w':
+        return 'Web'
     hits = sum(1 for row in rows if row.kind != 'web')
+    if scope == 'a' and not text:
+        return f'Alle Apps · {hits}'
     if hits == 0:
-        return f'Keine Treffer für „{query.strip()}“'
+        return f'Keine Treffer für „{text}“'
     return f'{hits} Treffer'

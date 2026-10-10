@@ -54,7 +54,10 @@ Cinnamon only: the shortcut goes through Cinnamon's own keybindings.
 | typing | search |
 | `↑` `↓` `Enter` | pick a result and run it |
 | `Ctrl+1` … `Ctrl+9` | run result 1 to 9 at once |
-| `Ctrl+Backspace` | clear the search, back to the tiles |
+| `@a␣` `@w␣` | narrow the search to a scope (see below) |
+| `Tab` | take the highlighted `@` suggestion |
+| `Backspace` in an empty field | drop the scope pill |
+| `Ctrl+Backspace` | clear the search and the pill, back to the tiles |
 
 Clicking anywhere else hides it too. Hidden is not closed: the service keeps
 running, which is why the window is there the instant the key is pressed.
@@ -65,7 +68,18 @@ Typing replaces the wall with a list of results: every installed app, pinned
 or not, matched by name, generic name, keywords and program name -- and by
 letters in order, so `gmp` finds GIMP. A sum like `3,5*2` is worked out
 (comma or point, as you like); Enter copies the answer. With no hit at all,
-Enter searches the web instead.
+Enter searches the web instead. The list scrolls and loads more as you go.
+
+A scope narrows the search. Type its abbreviation and a space and it turns
+into a pill in front of the field; typing `@` alone lists the scopes.
+
+| Scope | |
+|---|---|
+| `@a` Apps | apps only, no calculator; with nothing typed, every app from A to Z |
+| `@w` Web | your words on DuckDuckGo; bangs work (`minecraft !yt`) |
+
+Click the pill, or press Backspace in the empty field, to drop it. Files
+(`@f`) are next.
 
 ## All apps
 

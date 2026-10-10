@@ -12,6 +12,8 @@ gi.require_version('Gdk', '3.0')
 gi.require_version('Pango', '1.0')
 from gi.repository import Gdk, Gio, Gtk, Pango  # noqa: E402
 
+from . import query  # noqa: E402
+
 FALLBACK_SIZE = 10.0   # points, if the font name carries no size
 
 TEMPLATE = '''
@@ -266,6 +268,67 @@ button.kachel-list-row:hover {{
   background-color: rgba(255, 255, 255, 0.12);
 }}
 
+button.kachel-pill,
+button.kachel-pill:hover,
+button.kachel-pill:active {{
+  background-image: none;
+  border: none;
+  box-shadow: none;
+  text-shadow: none;
+  outline: none;
+  border-radius: 6px;
+  padding: 0 9px 0 7px;
+  min-width: 0;
+  min-height: 26px;
+  font-weight: 600;
+}}
+button.kachel-pill:hover {{
+  opacity: 0.8;
+}}
+
+.kachel-suggestions {{
+  background-color: rgba(44, 44, 48, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.38);
+  padding: 6px;
+}}
+button.kachel-suggestion,
+button.kachel-suggestion:hover,
+button.kachel-suggestion:active {{
+  background-image: none;
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+  text-shadow: none;
+  outline: none;
+  border-radius: 6px;
+  padding: 0 10px;
+  min-height: 40px;
+}}
+button.kachel-suggestion.selected {{
+  background-color: rgba(255, 255, 255, 0.10);
+}}
+button.kachel-suggestion .ms-icon {{
+  color: rgba(255, 255, 255, 0.75);
+}}
+.kachel-suggestion-code {{
+  font-family: "{mono}";
+  color: #F3F3F3;
+}}
+.kachel-suggestion-name {{
+  font-weight: 600;
+  color: #F3F3F3;
+}}
+.kachel-suggestion-hint {{
+  color: rgba(255, 255, 255, 0.55);
+}}
+.kachel-suggestions-footer {{
+  font-size: {secondary}pt;
+  color: rgba(255, 255, 255, 0.45);
+  padding: 6px 10px 2px 10px;
+}}
+
 entry.kachel-search-entry {{
   background: none;
   border: none;
@@ -345,9 +408,23 @@ def css(base, mono='Monospace'):
     '''
     def pt(delta):
         return f'{base + delta:g}'
-    return TEMPLATE.format(base=pt(0), category=pt(-1.5), tile=pt(-1.5),
-                           secondary=pt(-1), search=pt(5), name=pt(1),
-                           mono=mono.replace('"', '')).encode('utf-8')
+    sheet = TEMPLATE.format(base=pt(0), category=pt(-1.5), tile=pt(-1.5),
+                            secondary=pt(-1), search=pt(5), name=pt(1),
+                            mono=mono.replace('"', ''))
+    return (sheet + pill_css()).encode('utf-8')
+
+
+def pill_css():
+    '''One colour pair per scope pill (Design §5), from query.SCOPES.'''
+    rules = []
+    for scope in query.SCOPES:
+        rules.append(
+            f'button.kachel-pill.scope-{scope.code},\n'
+            f'button.kachel-pill.scope-{scope.code} .ms-icon {{\n'
+            f'  color: {scope.ink};\n}}\n'
+            f'button.kachel-pill.scope-{scope.code} {{\n'
+            f'  background-color: {scope.fill};\n}}\n')
+    return ''.join(rules)
 
 
 def monospace_family():
