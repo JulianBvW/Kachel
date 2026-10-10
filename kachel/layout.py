@@ -16,6 +16,8 @@ SIZES = {
 }
 
 GRID_COLUMNS = 6
+# Only the two big sizes carry shortcut buttons, and only this many.
+MAX_SHORTCUTS = {'large': 4, 'wide': 2}
 # The lowest row a hand-placed tile may ask for. Far more than any wall
 # needs, and small enough that a typo cannot ask for a wall of a billion
 # pixels.

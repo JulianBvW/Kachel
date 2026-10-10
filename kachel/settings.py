@@ -30,6 +30,16 @@ class General:
 
 
 @dataclass
+class Shortcut:
+    '''A button on a large or wide tile: runs `command`, not the app.'''
+    name: str
+    command: str
+    icon: str = None       # None: the default symbol
+    terminal: bool = False
+    line: int = None       # where its [[tile.shortcut]] header is
+
+
+@dataclass
 class Tile:
     group: str
     app: str = None        # .desktop ID, as written; resolved by assemble()
@@ -38,7 +48,7 @@ class Tile:
     command: str = None
     size: str = 'medium'
     pos: tuple = None      # (col, row) or None
-    shortcuts: list = field(default_factory=list)   # of dicts, phase 4
+    shortcuts: list = field(default_factory=list)   # of Shortcut
     line: int = None       # where its [[tile]] header is in the file
 
     @property
@@ -55,6 +65,7 @@ WINDOW_KEYS = {'columns', 'height'}
 TILES_KEYS = {'groups', 'tile'}
 TILE_KEYS = {'group', 'app', 'name', 'icon', 'command', 'size', 'pos',
              'shortcut'}
+SHORTCUT_KEYS = {'name', 'icon', 'command', 'terminal'}
 
 
 @dataclass
@@ -88,11 +99,20 @@ TILES_SKELETON = '''\
 # size  = "large"                # small | medium | wide | large
 # pos   = [0, 0]                 # [column 0-5, row], optional
 #
+# [[tile.shortcut]]             # belongs to the tile right above it;
+# name     = "home-server"       # large tiles carry up to 4, wide up to 2
+# icon     = "ms:dns"            # any Material Symbol (default ms:bolt)
+# command  = "ssh home-server"
+# terminal = true                # in the default terminal; default false
+#
 # [[tile]]
 # group   = "Work"
 # name    = "Notes"              # a tile without an app needs name + command
 # icon    = "theme:accessories-text-editor"
 # command = "xed ~/notes.txt"
+#
+# Icons: "ms:<symbol>" (fonts.google.com/icons), "theme:<icon name>",
+# or a path to a file (relative to this folder).
 
 groups = []
 '''
@@ -118,16 +138,35 @@ def _unknown_keys(table, known, where, messages):
                             'wird übergangen')
 
 
-def tile_header_lines(text):
-    '''Line numbers (1-based) of every [[tile]] header, in order.
+def header_lines(text):
+    '''Where the headers are, from one pass over the text:
+    (lines of the [[tile]] headers, for each tile the lines of the
+    [[tile.shortcut]] headers below it).
 
-    tomllib reports no positions for values, but the n-th [[tile]] header in
-    the text is the n-th entry in the parsed list, so this is enough to say
-    where a bad tile is. [[tile.shortcut]] headers do not count.
+    tomllib reports no positions for values, but the n-th [[tile]] header
+    is the n-th entry in the parsed list, and a [[tile.shortcut]] belongs
+    to the [[tile]] above it -- enough to say where a bad entry is.
     '''
-    pattern = re.compile(r'^\s*\[\[\s*tile\s*\]\]')
-    return [number for number, line in enumerate(text.splitlines(), 1)
-            if pattern.match(line)]
+    tile = re.compile(r'^\s*\[\[\s*tile\s*\]\]')
+    shortcut = re.compile(r'^\s*\[\[\s*tile\s*\.\s*shortcut\s*\]\]')
+    tiles, shortcuts = [], []
+    for number, line in enumerate(text.splitlines(), 1):
+        if tile.match(line):
+            tiles.append(number)
+            shortcuts.append([])
+        elif shortcut.match(line) and shortcuts:
+            shortcuts[-1].append(number)
+    return tiles, shortcuts
+
+
+def tile_header_lines(text):
+    '''Line numbers (1-based) of every [[tile]] header, in order.'''
+    return header_lines(text)[0]
+
+
+def shortcut_header_lines(text):
+    '''For each [[tile]], the lines of its [[tile.shortcut]] headers.'''
+    return header_lines(text)[1]
 
 
 def syntax_message(filename, error):
@@ -210,7 +249,7 @@ def parse_tiles(data, text='', filename=config.TILES_FILE):
     if not isinstance(raw_tiles, list):
         messages.append(f'{filename}: tile muss als [[tile]] stehen')
         raw_tiles = []
-    lines = tile_header_lines(text)
+    lines, shortcut_lines = header_lines(text)
 
     for index, raw in enumerate(raw_tiles):
         line = lines[index] if index < len(lines) else None
@@ -263,12 +302,66 @@ def parse_tiles(data, text='', filename=config.TILES_FILE):
                 messages.append(f'{where}: {tile.label}: pos = {pos!r} muss '
                                 '[spalte, zeile] sein, wird eingepasst')
 
-        shortcuts = raw.get('shortcut', [])
-        if isinstance(shortcuts, list):
-            tile.shortcuts = [s for s in shortcuts if isinstance(s, dict)]
+        if 'shortcut' in raw:
+            own_lines = shortcut_lines[index] \
+                if index < len(shortcut_lines) else []
+            tile.shortcuts, more = parse_shortcuts(
+                raw['shortcut'], tile, own_lines, filename)
+            messages += more
 
         wall.tiles.append(tile)
     return wall, messages
+
+
+def parse_shortcuts(raw_list, tile, lines, filename=config.TILES_FILE):
+    '''The [[tile.shortcut]] entries of one tile -> (shortcuts, messages).
+
+    `lines` are the lines of their headers, for the messages. Only large
+    (up to 4) and wide (up to 2) tiles carry shortcuts.
+    '''
+    messages = []
+    tile_where = _where(filename, tile.line)
+    if not isinstance(raw_list, list):
+        messages.append(f'{tile_where}: shortcut muss als [[tile.shortcut]] '
+                        'stehen')
+        return [], messages
+    limit = layout.MAX_SHORTCUTS.get(tile.size, 0)
+    if raw_list and limit == 0:
+        messages.append(f'{tile_where}: {tile.label}: {tile.size} trägt keine '
+                        'Shortcuts (nur large und wide), sie werden '
+                        'übergangen')
+        return [], messages
+
+    shortcuts = []
+    for index, raw in enumerate(raw_list):
+        line = lines[index] if index < len(lines) else tile.line
+        where = _where(filename, line)
+        if not isinstance(raw, dict):
+            messages.append(f'{where}: Shortcut muss als [[tile.shortcut]] '
+                            'mit name und command stehen, wird weggelassen')
+            continue
+        _unknown_keys(raw, SHORTCUT_KEYS, where, messages)
+        name = _optional_str(raw, 'name', where, messages)
+        command = _optional_str(raw, 'command', where, messages)
+        icon = _optional_str(raw, 'icon', where, messages)
+        if name is None or command is None:
+            messages.append(f'{where}: Shortcut braucht name und command, '
+                            'wird weggelassen')
+            continue
+        terminal = raw.get('terminal', False)
+        if not isinstance(terminal, bool):
+            messages.append(f'{where}: {name}: terminal = {terminal!r} muss '
+                            'true oder false sein, es gilt false')
+            terminal = False
+        shortcuts.append(Shortcut(name, command, icon, terminal, line))
+
+    if len(shortcuts) > limit:
+        extra = shortcuts[limit]
+        messages.append(f'{_where(filename, extra.line)}: {tile.label}: '
+                        f'{tile.size} trägt höchstens {limit} Shortcuts, '
+                        f'{len(shortcuts) - limit} fallen weg')
+        shortcuts = shortcuts[:limit]
+    return shortcuts, messages
 
 
 def assemble(wall, resolve, filename=config.TILES_FILE):

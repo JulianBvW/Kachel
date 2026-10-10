@@ -71,13 +71,47 @@ button.tile {{
   min-width: 0;
   min-height: 0;
 }}
-button.tile:hover {{
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.30);
-}}
+button.tile:hover,
 button.tile:active,
 button.tile:checked {{
   background-image: none;
   background-color: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+}}
+button.tile.hover {{
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.30);
+}}
+
+.tile-box {{
+  background: none;
+}}
+
+.tile-textline {{
+  font-size: {tile}pt;
+  color: rgba(255, 255, 255, 0.85);
+}}
+.tile-textline.active {{
+  color: #FFFFFF;
+}}
+
+button.shortcut,
+button.shortcut:hover,
+button.shortcut:active {{
+  background-image: none;
+  border: none;
+  box-shadow: none;
+  text-shadow: none;
+  outline: none;
+  border-radius: 4px;
+  padding: 0;
+  min-width: 0;
+  min-height: 0;
+}}
+button.shortcut {{
+  background-color: rgba(255, 255, 255, 0.08);
+}}
+button.shortcut:hover {{
+  background-color: rgba(255, 255, 255, 0.24);
 }}
 
 .tile-label {{

@@ -13,9 +13,9 @@ Large tiles carry shortcuts: a terminal tile with buttons for
 ## Status
 
 Work in progress. What runs so far: a resident service, a pane of glass that
-`F7` shows and hides, the tile wall read from a file, and the search over
-every installed app, with a calculator. The shortcuts on large tiles and the
-icon rail are next.
+`F7` shows and hides, the tile wall read from a file with shortcut buttons
+on its large tiles, and the search over every installed app, with a
+calculator. The icon rail and the app list are next.
 
 ## Requirements
 
@@ -109,6 +109,34 @@ icon    = "theme:accessories-text-editor"
 command = "xed ~/notes.txt"
 ```
 
+Large and wide tiles carry **shortcuts**: buttons that run a command of
+their own instead of starting the app -- up to four on a large tile, two on
+a wide one. A `[[tile.shortcut]]` belongs to the tile right above it:
+
+```toml
+[[tile]]
+group = "Work"
+app   = "com.mitchellh.ghostty"
+size  = "large"
+
+[[tile.shortcut]]
+name     = "home-server"          # shown as "› home-server" on hover
+icon     = "ms:dns"               # any Material Symbol; default ms:bolt
+command  = "ssh home-server"
+terminal = true                   # default false: runs quietly
+
+[[tile.shortcut]]
+name     = "claude"
+icon     = "ms:bolt"
+command  = "cd ~/Projects/my-app ; claude --resume"
+terminal = true
+```
+
+With `terminal = true` the command runs in the default terminal (as set in
+Cinnamon's preferred applications), and when it ends your shell takes over
+the window, in the folder the command left it in. Without it, the command
+runs quietly through `sh`.
+
 Tiles without a `pos` are fitted in, in file order: the first free spot
 from the top left. Two helpers:
 
@@ -117,8 +145,14 @@ from the top left. Two helpers:
 /usr/bin/python3 -m kachel --grid        # where every tile ended up, and why
 ```
 
-`--grid` draws each group's grid and marks the tiles that were fitted in
-`(auto)` -- copy that position into `pos` to pin it there.
+`--grid` draws each group's grid, lists every tile with its shortcuts, and
+marks the tiles that were fitted in `(auto)` -- copy that position into
+`pos` to pin it there. All messages about the files are printed at the end.
+
+Every `icon` takes one of three forms: `ms:<symbol>` for any of the
+Material Symbols (browse them at fonts.google.com/icons), `theme:<name>` for
+an icon from your icon theme, or a path to an image file, relative to
+`~/.config/kachel/`. Without one, a tile shows its app's icon.
 
 **`rail.toml`** -- folders and actions for the icon rail. Not read yet.
 

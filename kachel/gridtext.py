@@ -47,6 +47,9 @@ def render(groups, messages=()):
             auto = '  (auto)' if p.auto else ''
             out.append(f'  {mark} {p.tile.label:<{width}}  '
                        f'{p.tile.size:<6} {where}{auto}')
+            for shortcut in p.tile.shortcuts:
+                how = '  (Terminal)' if shortcut.terminal else ''
+                out.append(f'      › {shortcut.name}  {shortcut.command}{how}')
         out.append('')
 
     if messages:

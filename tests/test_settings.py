@@ -88,7 +88,8 @@ wall, messages = tiles(TEXT)
 first = wall.tiles[0]
 check('a good tile keeps app, size and pos',
       (first.app, first.size, first.pos) == ('code', 'large', (1, 2)), first)
-check('its shortcut comes along', first.shortcuts == [{'name': 'x', 'command': 'y'}],
+check('its shortcut comes along',
+      [(sc.name, sc.command) for sc in first.shortcuts] == [('x', 'y')],
       first.shortcuts)
 check('its header line is known', first.line == 3, first.line)
 check('unknown group: left out, with the line',
@@ -209,5 +210,99 @@ check('a folder that cannot be made is a problem, not a crash',
       written == [] and len(problems) == 2, problems)
 blocked.unlink()
 blocked.parent.rmdir()
+
+section('shortcuts')
+SC = """groups = ["A"]
+
+[[tile]]
+group = "A"
+app = "term"
+size = "large"
+
+[[tile.shortcut]]
+name = "ssh"
+icon = "ms:dns"
+command = "ssh home"
+terminal = true
+
+[[tile.shortcut]]
+name = "quiet"
+command = "touch x"
+
+[[tile.shortcut]]
+name = "no command"
+
+[[tile.shortcut]]
+name = "bad"
+command = "y"
+terminal = "ja"
+comand = "typo"
+
+[[tile.shortcut]]
+name = "four"
+command = "4"
+
+[[tile.shortcut]]
+name = "five"
+command = "5"
+
+[[tile]]
+group = "A"
+app = "web"
+size = "wide"
+
+[[tile.shortcut]]
+name = "w1"
+command = "1"
+
+[[tile.shortcut]]
+name = "w2"
+command = "2"
+
+[[tile.shortcut]]
+name = "w3"
+command = "3"
+
+[[tile]]
+group = "A"
+app = "small"
+size = "medium"
+
+[[tile.shortcut]]
+name = "m"
+command = "m"
+"""
+wall, messages = tiles(SC)
+term, web, medium = wall.tiles
+first = term.shortcuts[0]
+check('a shortcut keeps name, icon, command and terminal',
+      (first.name, first.icon, first.command, first.terminal)
+      == ('ssh', 'ms:dns', 'ssh home', True), first)
+check('its header line is known', first.line == 8, first.line)
+check('terminal defaults to false, icon to none',
+      term.shortcuts[1].terminal is False and term.shortcuts[1].icon is None)
+check('without command: left out', has(messages, 'Zeile 18', 'name und command'),
+      messages)
+check('terminal must be a boolean', has(messages, 'Zeile 21', 'terminal')
+      and term.shortcuts[2].terminal is False, messages)
+check('a misspelt shortcut key is reported', has(messages, 'Zeile 21', 'comand'),
+      messages)
+check('large keeps four, the fifth is reported at its line',
+      [s.name for s in term.shortcuts] == ['ssh', 'quiet', 'bad', 'four']
+      and has(messages, 'Zeile 31', 'höchstens 4', '1 fallen weg'), messages)
+check('wide keeps two', [s.name for s in web.shortcuts] == ['w1', 'w2']
+      and has(messages, 'Zeile 48', 'höchstens 2'), messages)
+check('medium carries none, and says so', medium.shortcuts == []
+      and has(messages, 'Zeile 52', 'medium trägt keine Shortcuts'), messages)
+
+check('shortcut_header_lines groups them per tile',
+      settings.shortcut_header_lines(SC) == [[8, 14, 18, 21, 27, 31], [40, 44, 48], [57]],
+      settings.shortcut_header_lines(SC))
+check('a shortcut header before any tile is ignored',
+      settings.shortcut_header_lines('[[tile.shortcut]]\n[[tile]]\n') == [[]])
+
+wall, messages = tiles('groups = ["A"]\n[[tile]]\ngroup = "A"\napp = "t"\nsize = "large"\nshortcut = ["ssh home"]\n')
+check('a shortcut that is not a table is reported, not dropped silently',
+      wall.tiles[0].shortcuts == [] and has(messages, 'Shortcut muss als'), messages)
 
 harness.report()

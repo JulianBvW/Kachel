@@ -1,5 +1,6 @@
 '''Starting things: an app from its .desktop entry, or a command line.'''
 
+import shlex
 from pathlib import Path
 
 import gi
@@ -45,6 +46,60 @@ def open_uri(uri, timestamp):
     context.set_timestamp(timestamp)
     try:
         Gio.AppInfo.launch_default_for_uri(uri, context)
+    except GLib.Error as error:
+        return error.message
+    return None
+
+
+# When the desktop names no terminal at all.
+FALLBACK_TERMINAL = ('x-terminal-emulator', '-e')
+TERMINAL_SCHEMA = 'org.cinnamon.desktop.default-applications.terminal'
+
+
+def terminal_argv(terminal, exec_arg, command):
+    '''The argument list that runs `command` in `terminal`. Pure.
+
+    `terminal` is the terminal's command line ('ghostty
+    --working-directory=.'), `exec_arg` what it wants before a command
+    ('-e', '--', or nothing). The command goes through sh as one single
+    argument, so its quotes, `;` and `~` arrive exactly as written. After
+    it, the user's own shell takes over the window -- quitting nvim leaves
+    you in the folder it ran in, instead of closing the terminal. The line
+    break keeps a trailing `# comment` in the command from swallowing it.
+    '''
+    argv = shlex.split(terminal)
+    if exec_arg:
+        argv += shlex.split(exec_arg)
+    return argv + ['sh', '-c', f'{command}\nexec "${{SHELL:-sh}}"']
+
+
+def default_terminal():
+    '''(terminal, exec_arg) as set in Cinnamon, or a fallback.
+
+    Looked up before it is opened: Gio.Settings on a schema that is not
+    installed aborts the whole process.
+    '''
+    source = Gio.SettingsSchemaSource.get_default()
+    schema = source.lookup(TERMINAL_SCHEMA, True) if source else None
+    if schema is None:
+        return FALLBACK_TERMINAL
+    settings = Gio.Settings.new(TERMINAL_SCHEMA)
+    terminal = settings.get_string('exec').strip()
+    if not terminal:
+        return FALLBACK_TERMINAL
+    return terminal, settings.get_string('exec-arg').strip()
+
+
+def run_in_terminal(command):
+    '''Open the default terminal running `command`. None or the error.'''
+    terminal, exec_arg = default_terminal()
+    try:
+        argv = terminal_argv(terminal, exec_arg, command)
+    except ValueError as error:   # unbalanced quotes in the terminal setting
+        return f'terminal setting {terminal!r}: {error}'
+    try:
+        GLib.spawn_async(argv, working_directory=str(Path.home()),
+                         flags=GLib.SpawnFlags.SEARCH_PATH)
     except GLib.Error as error:
         return error.message
     return None

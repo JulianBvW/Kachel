@@ -13,6 +13,14 @@ class T:
     label: str
     size: str = 'medium'
     pos: tuple = None
+    shortcuts: tuple = ()
+
+
+@dataclass
+class S:
+    name: str
+    command: str
+    terminal: bool = False
 
 
 groups = [('Arbeit', layout.place([T('term', 'large', (0, 0)), T('code')])),
@@ -33,5 +41,10 @@ check('an empty group says so', '  (leer)' in lines, lines)
 check('messages at the end', lines[-1] == '  tiles.toml, Zeile 3: kaputt'
       and '1 Meldung(en):' in lines, lines[-3:])
 check('no messages: says so', gridtext.render([]).endswith('Keine Meldungen.\n'))
+
+term = T('term', 'large', (0, 0), (S('ssh', 'ssh home', True), S('quiet', 'touch x')))
+text = gridtext.render([('A', layout.place([term]))])
+check('shortcuts are listed under their tile, terminal marked',
+      '      › ssh  ssh home  (Terminal)' in text and '      › quiet  touch x\n' in text, text)
 
 harness.report()

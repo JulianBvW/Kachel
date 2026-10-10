@@ -135,7 +135,8 @@ class KachelWindow(Gtk.Window):
         rail.get_style_context().add_class('kachel-rail')
         rail.set_size_request(config.RAIL_WIDTH, -1)
         main.pack_start(rail, False, False, 0)
-        self.wall = TileWall(on_activate=self._on_activate)
+        self.wall = TileWall(on_activate=self._on_activate,
+                             on_shortcut=self._on_shortcut)
         main.pack_start(self.wall, True, True, 0)
 
         self.results = ResultList(on_activate=self._on_result)
@@ -293,6 +294,18 @@ class KachelWindow(Gtk.Window):
             self._log(f'ran {result.title!r}')
         self.hide_kachel()
 
+    def _on_shortcut(self, shortcut, _timestamp):
+        '''A shortcut button: its command, in a terminal or quietly.'''
+        if shortcut.terminal:
+            problem = launch.run_in_terminal(shortcut.command)
+        else:
+            problem = launch.launch_command(shortcut.command)
+        if problem:
+            self._log(f'could not run {shortcut.name!r}: {problem}')
+        else:
+            self._log(f'ran {shortcut.name!r}')
+        self.hide_kachel()
+
     def _on_activate(self, tile, app, timestamp):
         '''A tile was clicked: start it, then get out of the way.'''
         if tile.command:
@@ -448,6 +461,7 @@ class KachelWindow(Gtk.Window):
         search field and the main view. (Later also: no pills, first
         action page, nothing armed.)'''
         self.searchbar.reset()
+        self.wall.reset_hover()
         self._body.set_visible_child_name('main')
 
     def _placement(self):
