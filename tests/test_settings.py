@@ -166,8 +166,11 @@ check('an unclosed bracket is reported at the end of the file',
 
 folder = Path(tempfile.mkdtemp(prefix='kachel-test-'))
 written, problems = settings.ensure_files(folder)
-check('both skeletons are written', sorted(p.name for p in written)
-      == ['kachel.toml', 'tiles.toml'] and not problems, written)
+check('all three skeletons are written', sorted(p.name for p in written)
+      == ['kachel.toml', 'rail.toml', 'tiles.toml'] and not problems, written)
+rail_read, messages = settings.load_rail(folder)
+check('the rail skeleton reads cleanly', rail_read == settings.default_rail()
+      and not messages, messages)
 general, messages = settings.load_general(folder)
 check('the general skeleton reads cleanly', general.columns == 2 and not messages,
       messages)
@@ -207,7 +210,7 @@ blocked = Path(tempfile.mkdtemp(prefix='kachel-test-')) / 'file-not-folder'
 blocked.write_text('x', encoding='utf-8')
 written, problems = settings.ensure_files(blocked)
 check('a folder that cannot be made is a problem, not a crash',
-      written == [] and len(problems) == 2, problems)
+      written == [] and len(problems) == 3, problems)
 blocked.unlink()
 blocked.parent.rmdir()
 
@@ -304,5 +307,125 @@ check('a shortcut header before any tile is ignored',
 wall, messages = tiles('groups = ["A"]\n[[tile]]\ngroup = "A"\napp = "t"\nsize = "large"\nshortcut = ["ssh home"]\n')
 check('a shortcut that is not a table is reported, not dropped silently',
       wall.tiles[0].shortcuts == [] and has(messages, 'Shortcut muss als'), messages)
+
+section('parse_color')
+check('#rgb', settings.parse_color('#f00') == (1.0, 0.0, 0.0, 1.0))
+check('#rrggbb', settings.parse_color('#00ff00') == (0.0, 1.0, 0.0, 1.0))
+check('#rrggbbaa', settings.parse_color('#0000ff80') == (0.0, 0.0, 1.0, 128 / 255))
+check('rgba()', settings.parse_color('rgba(255, 0, 0, 0.5)') == (1.0, 0.0, 0.0, 0.5))
+check('rgb()', settings.parse_color('rgb(0,0,255)') == (0.0, 0.0, 1.0, 1.0))
+for bad in ('red', '#12', '#gggggg', 'rgba(1, 2, 3)', 'rgb(1, 2, 3, 0.5)',
+            'rgba(300, 0, 0, 1)', 'rgba(0, 0, 0, 2)', 5, None):
+    check(f'{bad!r} is no colour', settings.parse_color(bad) is None)
+
+
+def rail(text):
+    return settings.parse_rail(tomllib.loads(text), text)
+
+
+section('parse_rail')
+r, messages = rail(settings.RAIL_SKELETON)
+check('the skeleton reads without a single message', messages == [], messages)
+check('the skeleton: 7 folders, 6 actions', (len(r.folders), len(r.actions)) == (7, 6))
+check('switching off and restarting ask first, nothing else',
+      [a.name for a in r.actions if a.confirm] == ['Ausschalten', 'Neustart'])
+check('suspend, not hibernate',
+      any(a.command == 'systemctl suspend' for a in r.actions)
+      and not any('hibernate' in a.command for a in r.actions))
+
+r, messages = rail('')
+check('an empty file: the defaults, nothing to say',
+      (len(r.folders), len(r.actions), messages) == (7, 6, []))
+check('default entries carry no line numbers into someone else\'s file',
+      all(f.line is None for f in r.folders) and all(a.line is None for a in r.actions))
+r, messages = rail('folder = []\naction = []\n')
+check('folder = [] and action = []: none at all', (r.folders, r.actions, messages) == ([], [], []))
+r, messages = rail('[[action]]\nname = "x"\ncommand = "true"\n')
+check('only actions written: default folders, just that action',
+      len(r.folders) == 7 and [a.name for a in r.actions] == ['x'])
+
+RAIL = """[[folder]]
+path = "~/Projekte"
+name = "Code"
+icon = "ms:code"
+
+[[folder]]
+name = "ohne Pfad"
+
+[[folder]]
+path = "~"
+colour = "x"
+
+[[action]]
+name = "Eins"
+command = "true"
+confirm = { label = "Echt?", color = "#4caf5080", duration = 10000 }
+
+[[action]]
+name = "Zwei"
+command = "true"
+confirm = true
+terminal = "ja"
+
+[[action]]
+name = "ohne Befehl"
+
+[[action]]
+name = "Drei"
+command = "true"
+confirm = { color = "grün", duration = 99, lable = "x" }
+
+[[action]]
+name = "Vier"
+command = "true"
+confirm = "ja"
+
+[[action]]
+name = "Fünf"
+command = "true"
+
+[[action]]
+name = "Sechs"
+command = "true"
+
+[[action]]
+name = "Sieben"
+command = "true"
+
+[[action]]
+name = "Acht"
+command = "true"
+"""
+r, messages = rail(RAIL)
+check('folders as written', [(f.path, f.name, f.icon) for f in r.folders]
+      == [('~/Projekte', 'Code', 'ms:code'), ('~', None, None)], r.folders)
+check('a folder without path is reported at its line',
+      has(messages, 'Zeile 6', 'ohne path'), messages)
+check('a misspelt folder key is reported', has(messages, 'Zeile 9', 'colour'), messages)
+one = r.actions[0]
+check('confirm as a table', one.confirm == settings.Confirm(
+      'Echt?', (0x4c / 255, 0xaf / 255, 0x50 / 255, 0x80 / 255), 10000), one.confirm)
+check('confirm = true: the defaults', r.actions[1].confirm == settings.Confirm())
+check('terminal must be a boolean', r.actions[1].terminal is False
+      and has(messages, 'Zeile 18', 'terminal'), messages)
+check('an action without command is reported', has(messages, 'Zeile 24', 'name und command'),
+      messages)
+three = r.actions[2].confirm
+check('a bad colour and duration fall back, each reported',
+      three.color == settings.CONFIRM_RED and three.duration == 4000
+      and has(messages, 'Zeile 27', 'color') and has(messages, 'Zeile 27', 'duration'),
+      messages)
+check('a misspelt confirm key is reported', has(messages, 'confirm', 'lable'), messages)
+check('confirm = "ja" counts as true, with a message',
+      r.actions[3].confirm == settings.Confirm() and has(messages, 'Zeile 32', 'confirm'),
+      messages)
+check('at most six; the seventh is reported at its line',
+      [a.name for a in r.actions] == ['Eins', 'Zwei', 'Drei', 'Vier', 'Fünf', 'Sechs']
+      and has(messages, 'Zeile 45', 'höchstens 6', '2 fallen weg'), messages)
+r, messages = rail('folder = "~"\n')
+check('folder not as [[folder]]: defaults and a message',
+      len(r.folders) == 7 and has(messages, '[[folder]]'), messages)
+r, messages = rail('[[foldr]]\npath = "~"\n')
+check('a misspelt table is reported', has(messages, 'foldr'), messages)
 
 harness.report()

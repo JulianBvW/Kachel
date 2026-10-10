@@ -2,6 +2,7 @@
 
 import math
 import time
+from pathlib import Path
 
 import cairo
 import gi
@@ -10,12 +11,14 @@ gi.require_version('Gtk', '3.0')
 gi.require_version('Gdk', '3.0')
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from . import (blur, config, geometry, icons, launch, search,  # noqa: E402
-               settings, style)
+from . import (blur, config, geometry, icons, launch,  # noqa: E402
+               railmodel, search, settings, style)
 from .apps import AppIndex  # noqa: E402
+from .rail import Rail  # noqa: E402
 from .results import ResultList  # noqa: E402
 from .searchbar import SearchBar  # noqa: E402
 from .tilewall import TileWall  # noqa: E402
+from .tooltip import Tooltip  # noqa: E402
 
 # X11-only, and only needed for a fresh server timestamp. Kept optional so the
 # import does not bring the whole program down on a session without it.
@@ -99,6 +102,8 @@ class KachelWindow(Gtk.Window):
         self._apps = AppIndex()
         self._general = settings.General()
         self._wall_settings = settings.Wall()
+        self._rail_settings = settings.default_rail()
+        self._rail_shown = None   # (folders, pages, messages) on the rail
         self._build_body()
 
         written, self._setup_problems = settings.ensure_files(
@@ -119,9 +124,9 @@ class KachelWindow(Gtk.Window):
     def _build_body(self):
         '''Search bar on top; below it either the main view or the results.
 
-        The main view is the rail on the left (an empty strip until phase 5)
-        and the wall. While there is something in the search field, a single
-        result list takes the place of both.
+        The main view is the rail on the left and the wall, with the rail's
+        tooltip floating over both. While there is something in the search
+        field, a single result list takes the place of all that.
         '''
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         root.get_style_context().add_class('kachel-root')
@@ -131,13 +136,19 @@ class KachelWindow(Gtk.Window):
         root.pack_start(self.searchbar, False, False, 0)
 
         main = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        rail = Gtk.Box()
-        rail.get_style_context().add_class('kachel-rail')
-        rail.set_size_request(config.RAIL_WIDTH, -1)
-        main.pack_start(rail, False, False, 0)
+        self.tooltip = Tooltip()
+        self.rail = Rail(on_folder=self._on_folder, on_action=self._on_action,
+                         tooltip=self.tooltip)
+        main.pack_start(self.rail, False, False, 0)
         self.wall = TileWall(on_activate=self._on_activate,
                              on_shortcut=self._on_shortcut)
         main.pack_start(self.wall, True, True, 0)
+        overlay = Gtk.Overlay()
+        overlay.add(main)
+        overlay.add_overlay(self.tooltip)
+        # Over the wall, but never in its way: the tile under the tooltip
+        # keeps its hover and its clicks.
+        overlay.set_overlay_pass_through(self.tooltip, True)
 
         self.results = ResultList(on_activate=self._on_result)
         for side in ('top', 'bottom', 'start', 'end'):
@@ -146,7 +157,7 @@ class KachelWindow(Gtk.Window):
         # No transition: switching is a redraw, not an animation to wait for.
         self._body = Gtk.Stack()
         self._body.set_transition_type(Gtk.StackTransitionType.NONE)
-        self._body.add_named(main, 'main')
+        self._body.add_named(overlay, 'main')
         self._body.add_named(self.results, 'results')
         root.pack_start(self._body, True, True, 0)
 
@@ -174,11 +185,17 @@ class KachelWindow(Gtk.Window):
         if wall is not None:
             self._wall_settings = wall
 
+        rail, more = settings.load_rail(self._config_dir)
+        messages += more
+        if rail is not None:
+            self._rail_settings = rail
+
         groups, more = settings.assemble(self._wall_settings,
                                          self._apps.resolve)
         messages += more
 
         self._apply_size()
+        messages += self._build_rail()
         area = self._width - config.RAIL_WIDTH
         self.wall.show_wall(groups, self._apps, messages, area,
                             self._general.columns, self._config_dir)
@@ -189,6 +206,27 @@ class KachelWindow(Gtk.Window):
                   f'{(time.monotonic() - t0) * 1000:.1f} ms')
         for message in messages:
             self._log(f'  {message}')
+
+    def _assemble_rail(self):
+        return railmodel.assemble(self._rail_settings, railmodel.special_dir,
+                                  Path.home(), self._height)
+
+    def _build_rail(self):
+        '''Work out the rail and rebuild it. -> messages.'''
+        folders, pages, messages = self._assemble_rail()
+        self._rail_shown = (folders, pages, messages)
+        self.rail.show_rail(folders, pages, self._config_dir)
+        self._log(f'rail built: {len(folders)} folders, '
+                  f'{len(pages)} action pages')
+        return messages
+
+    def _check_rail(self):
+        '''Folders come and go without any .toml being saved. Looked at
+        on every show -- a few stat calls -- and rebuilt if that changed
+        what the rail shows.'''
+        if self._assemble_rail() != self._rail_shown:
+            self._log('folders changed on disk')
+            self.reload()
 
     def _apply_size(self):
         width = geometry.window_width(self._general.columns)
@@ -215,6 +253,15 @@ class KachelWindow(Gtk.Window):
             Gio.FileMonitorFlags.WATCH_MOVES, None)
         self._monitor.connect('changed', self._on_folder_changed)
 
+        # Where the system keeps @XDG_DOCUMENTS_DIR and friends. GLib reads
+        # it once and caches it; it is read again only when it changes,
+        # since dropping the cache may leak what it handed out before.
+        dirs = Gio.File.new_for_path(
+            str(Path(GLib.get_user_config_dir()) / 'user-dirs.dirs'))
+        self._dirs_monitor = dirs.monitor_file(Gio.FileMonitorFlags.NONE,
+                                               None)
+        self._dirs_monitor.connect('changed', self._on_user_dirs_changed)
+
         self._app_monitor = Gio.AppInfoMonitor.get()
         self._app_monitor.connect('changed', self._on_apps_changed)
 
@@ -222,6 +269,10 @@ class KachelWindow(Gtk.Window):
         names = {f.get_basename() for f in (file, other) if f is not None}
         if any(name.endswith('.toml') for name in names):
             self._schedule_reload()
+
+    def _on_user_dirs_changed(self, *_args):
+        GLib.reload_user_special_dirs_cache()
+        self._schedule_reload()
 
     def _on_apps_changed(self, _monitor):
         # An install fires this many times in a row. Reading every .desktop
@@ -296,14 +347,32 @@ class KachelWindow(Gtk.Window):
 
     def _on_shortcut(self, shortcut, _timestamp):
         '''A shortcut button: its command, in a terminal or quietly.'''
-        if shortcut.terminal:
-            problem = launch.run_in_terminal(shortcut.command)
+        self._run(shortcut)
+
+    def _on_action(self, action, _timestamp):
+        '''An action on the rail -- confirmed already, if it asks.'''
+        self._run(action)
+
+    def _run(self, entry):
+        '''Run what a shortcut or an action says, then go away.'''
+        if entry.terminal:
+            problem = launch.run_in_terminal(entry.command)
         else:
-            problem = launch.launch_command(shortcut.command)
+            problem = launch.launch_command(entry.command)
         if problem:
-            self._log(f'could not run {shortcut.name!r}: {problem}')
+            self._log(f'could not run {entry.name!r}: {problem}')
         else:
-            self._log(f'ran {shortcut.name!r}')
+            self._log(f'ran {entry.name!r}')
+        self.hide_kachel()
+
+    def _on_folder(self, folder, timestamp):
+        '''A folder on the rail: open it in the file manager.'''
+        uri = Gio.File.new_for_path(str(folder.path)).get_uri()
+        problem = launch.open_uri(uri, timestamp)
+        if problem:
+            self._log(f'could not open {folder.path}: {problem}')
+        else:
+            self._log(f'opened {folder.path}')
         self.hide_kachel()
 
     def _on_activate(self, tile, app, timestamp):
@@ -430,6 +499,7 @@ class KachelWindow(Gtk.Window):
         self._focus_hidden_at = None
         self._check_compositing()
         self._check_blur()
+        self._check_rail()
 
         # Placed on every show: on the monitor the pointer is on, which is
         # the one being looked at.
@@ -458,10 +528,11 @@ class KachelWindow(Gtk.Window):
 
     def reset(self):
         '''Back to the state the next show should start from: an empty
-        search field and the main view. (Later also: no pills, first
-        action page, nothing armed.)'''
+        search field, the main view, the first action page and nothing
+        armed. (Later also: no pills.)'''
         self.searchbar.reset()
         self.wall.reset_hover()
+        self.rail.reset()
         self._body.set_visible_child_name('main')
 
     def _placement(self):

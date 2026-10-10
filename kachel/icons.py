@@ -33,6 +33,16 @@ FALLBACK = {
     'apps': 'view-app-grid-symbolic',
     'calculate': 'accessories-calculator-symbolic',
     'public': 'web-browser-symbolic',
+    'check': 'object-select-symbolic',
+    'more_horiz': 'view-more-horizontal-symbolic',
+    'arrow_back': 'go-previous-symbolic',
+    'folder': 'folder-symbolic',
+    'home': 'user-home-symbolic',
+    'settings': 'preferences-system-symbolic',
+    'power_settings_new': 'system-shutdown-symbolic',
+    'restart_alt': 'system-reboot-symbolic',
+    'logout': 'system-log-out-symbolic',
+    'lock': 'system-lock-screen-symbolic',
 }
 GENERIC_ICON = 'application-x-executable'
 

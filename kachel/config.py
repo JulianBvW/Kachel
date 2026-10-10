@@ -19,6 +19,7 @@ PROGRAM_CLASS = 'Kachel'  # class name     -> WM_CLASS field 2
 CONFIG_DIR = Path.home() / '.config' / 'kachel'
 GENERAL_FILE = 'kachel.toml'
 TILES_FILE = 'tiles.toml'
+RAIL_FILE = 'rail.toml'
 
 # Window defaults and bounds. The width is not free: it has to land on the
 # tile grid, so it is derived from the number of tile columns.
@@ -45,7 +46,7 @@ FOCUS_HIDE_GRACE_MS = 250
 # folder to be quiet this long before reading the settings again.
 RELOAD_DELAY_MS = 200
 
-# The two strips that phases 3 and 5 will fill: the search bar on top and
-# the icon rail on the left. Their size is part of the window geometry now.
+# The search bar on top and the icon rail on the left. Their size is part
+# of the window geometry.
 SEARCHBAR_HEIGHT = 56
 RAIL_WIDTH = 60

@@ -4,7 +4,8 @@ Run it from the repository:
 
     /usr/bin/python3 -m kachel --daemon         the resident service
     /usr/bin/python3 -m kachel --list-apps      app IDs, for tiles.toml
-    /usr/bin/python3 -m kachel --grid           where every tile ended up
+    /usr/bin/python3 -m kachel --grid           where every tile ended up,
+                                                and what the rail shows
 
 `--config DIR` reads the settings from DIR instead of ~/.config/kachel.
 
@@ -44,16 +45,23 @@ def list_apps():
 
 def grid(folder):
     '''The wall as text, read the same way the window reads it.'''
-    from . import config, gridtext, settings
+    from . import config, gridtext, railmodel, settings
     from .apps import AppIndex
     folder = folder or config.CONFIG_DIR
     wall, messages = settings.load_tiles(folder)
     if wall is None:
         wall = settings.Wall()
-    _general, more = settings.load_general(folder)
+    general, more = settings.load_general(folder)
     messages = more + messages
     groups, more = settings.assemble(wall, AppIndex().resolve)
-    print(gridtext.render(groups, messages + more), end='')
+    messages += more
+    height = (general or settings.General()).height
+    rail, more = settings.load_rail(folder)
+    messages += more
+    folders, pages, more = railmodel.assemble(
+        rail or settings.default_rail(), railmodel.special_dir, Path.home(),
+        height)
+    print(gridtext.render(groups, messages + more, (folders, pages)), end='')
     return 0
 
 

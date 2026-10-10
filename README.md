@@ -14,8 +14,9 @@ Large tiles carry shortcuts: a terminal tile with buttons for
 
 Work in progress. What runs so far: a resident service, a pane of glass that
 `F7` shows and hides, the tile wall read from a file with shortcut buttons
-on its large tiles, and the search over every installed app, with a
-calculator. The icon rail and the app list are next.
+on its large tiles, the search over every installed app, with a
+calculator, and the icon rail with folders and actions. The app list is
+next.
 
 ## Requirements
 
@@ -142,7 +143,8 @@ from the top left. Two helpers:
 
 ```
 /usr/bin/python3 -m kachel --list-apps   # every app ID, to pin
-/usr/bin/python3 -m kachel --grid        # where every tile ended up, and why
+/usr/bin/python3 -m kachel --grid        # where every tile ended up, and why;
+                                         # and what the rail shows
 ```
 
 `--grid` draws each group's grid, lists every tile with its shortcuts, and
@@ -154,7 +156,52 @@ Material Symbols (browse them at fonts.google.com/icons), `theme:<name>` for
 an icon from your icon theme, or a path to an image file, relative to
 `~/.config/kachel/`. Without one, a tile shows its app's icon.
 
-**`rail.toml`** -- folders and actions for the icon rail. Not read yet.
+**`rail.toml`** -- the rail on the left: folders on top, actions at the
+bottom. The entries carry no text; hovering one shows its name beside the
+rail. The skeleton spells out the defaults -- your home, documents,
+downloads, pictures, music, videos and desktop, and six actions:
+
+| Page 1 | Page 2 |
+|---|---|
+| Settings -- `cinnamon-settings` | Restart -- `systemctl reboot` (asks first) |
+| Suspend -- `systemctl suspend` | Log out -- `cinnamon-session-quit --logout --no-prompt` |
+| Power off -- `systemctl poweroff` (asks first) | Lock -- `cinnamon-screensaver-command --lock` |
+| More → | ← Back |
+
+```toml
+[[folder]]
+path = "@XDG_DOWNLOAD_DIR"        # the system's own folder, and its name
+icon = "ms:download"
+
+[[folder]]
+name = "Kachel"                   # default: the folder's own name
+path = "~/Projects/Kachel"
+icon = "ms:code"                  # default ms:folder
+
+[[action]]
+name    = "Power off"
+icon    = "ms:power_settings_new"   # default ms:bolt
+command = "systemctl poweroff"
+confirm = { label = "Really power off?", color = "#ef666180", duration = 4000 }
+```
+
+A folder's `path` is `~/...`, an absolute path, or one of the system's
+folders as `@XDG_DOCUMENTS_DIR` (also `DOWNLOAD`, `PICTURES`, `MUSIC`,
+`VIDEOS`, `DESKTOP`, `TEMPLATES`, `PUBLICSHARE`). Those are looked up, so
+the defaults are right in any language. As many folders fit as the window
+height allows (10 at 680 px).
+
+At most six actions, in file order. Up to four fit on one page; with five
+or six, the fourth place turns to a second page. An action takes
+`terminal = true` like a shortcut. With `confirm`, the first click only
+arms it: the icon turns into a check mark and a coloured fill rises; a
+second click before it reaches the top runs the action, moving away
+disarms it. `confirm = true` takes the defaults ("Sicher?", red, 4000 ms);
+a table can set `label`, `color` (`#rrggbb`, `#rrggbbaa` or `rgba(...)`)
+and `duration` (500-60000 ms).
+
+Leave out every `[[folder]]` (or every `[[action]]`) and the defaults come
+back; `folder = []` means none at all. `--grid` lists the rail too.
 
 ## Blur
 

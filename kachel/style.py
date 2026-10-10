@@ -30,6 +30,46 @@ TEMPLATE = '''
   border-bottom-left-radius: 16px;
 }}
 
+.kachel-slider {{
+  background: none;
+}}
+
+button.rail-entry,
+button.rail-entry:hover,
+button.rail-entry:active {{
+  background-image: none;
+  border: none;
+  box-shadow: none;
+  text-shadow: none;
+  outline: none;
+  border-radius: 6px;
+  padding: 0;
+  min-width: 0;
+  min-height: 0;
+}}
+button.rail-entry {{
+  background-color: transparent;
+}}
+button.rail-entry:hover {{
+  background-color: rgba(255, 255, 255, 0.08);
+}}
+
+.kachel-tooltip {{
+  background-color: rgba(44, 44, 48, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.38);
+  padding: 7px 11px;
+}}
+.kachel-tooltip-name {{
+  font-weight: 600;
+  color: #F3F3F3;
+}}
+.kachel-tooltip-sub {{
+  font-size: {secondary}pt;
+  color: rgba(255, 255, 255, 0.55);
+}}
+
 .kachel-wall,
 .kachel-wall viewport {{
   background: none;

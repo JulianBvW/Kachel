@@ -1,11 +1,12 @@
 '''The --grid text for a known wall.'''
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import harness
 from harness import check, section
 
-from kachel import gridtext, layout
+from kachel import gridtext, layout, railmodel, settings
 
 
 @dataclass
@@ -46,5 +47,22 @@ term = T('term', 'large', (0, 0), (S('ssh', 'ssh home', True), S('quiet', 'touch
 text = gridtext.render([('A', layout.place([term]))])
 check('shortcuts are listed under their tile, terminal marked',
       '      › ssh  ssh home  (Terminal)' in text and '      › quiet  touch x\n' in text, text)
+
+section('rail')
+folders = [railmodel.RailFolder('Downloads', Path('/h/Downloads'), 'ms:download', '~/Downloads')]
+actions = [settings.Action(f'a{i}', f'cmd{i}') for i in range(5)]
+actions[1].confirm = settings.Confirm('Echt?', duration=2000)
+actions[2].terminal = True
+text = gridtext.render([], [], (folders, railmodel.pages(actions)))
+check('the rail section comes after the wall', 'Leiste\n  Ordner\n' in text, text)
+check('folders with their shown path', '    Downloads  ~/Downloads\n' in text, text)
+check('pages numbered, page turners shown',
+      '  Aktionen, Seite 1\n' in text and '    › Mehr' in text
+      and '  Aktionen, Seite 2\n' in text and '    ‹ Zurück' in text, text)
+check('confirm and terminal are marked',
+      'a1  cmd1  (Bestätigung: „Echt?“, 2000 ms)' in text
+      and 'a2  cmd2  (Terminal)' in text, text)
+text = gridtext.render([], [], ([], []))
+check('an empty rail says so', text.count('(keine)') == 2, text)
 
 harness.report()
