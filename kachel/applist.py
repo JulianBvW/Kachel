@@ -12,7 +12,7 @@ gi.require_version('Gdk', '3.0')
 gi.require_version('Pango', '1.0')
 from gi.repository import Gdk, GLib, Gtk, Pango  # noqa: E402
 
-from . import icons, listmodel  # noqa: E402
+from . import anim, icons, listmodel  # noqa: E402
 from .slide import EASE_OUT_SLOW  # noqa: E402
 from .contextmenu import is_right_click  # noqa: E402
 
@@ -159,6 +159,7 @@ class AppList(Gtk.Box):
         glyph.set_halign(Gtk.Align.CENTER)
         glyph.set_valign(Gtk.Align.CENTER)
         plate.set_center_widget(glyph)
+        anim.IconScale(glyph).follow(row)
         content.pack_start(plate, False, False, 0)
 
         name = Gtk.Label(label=app.name, xalign=0)

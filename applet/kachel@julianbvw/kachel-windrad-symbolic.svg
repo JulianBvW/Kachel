@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- Kachel-Windrad: four tiles turning around the middle like a pinwheel -->
+  <g fill="#bebebe">
+    <rect x="0.5" y="0.5" width="8.625" height="5.25" rx="0.9"/>
+    <rect x="10.25" y="0.5" width="5.25" height="8.625" rx="0.9"/>
+    <rect x="6.875" y="10.25" width="8.625" height="5.25" rx="0.9"/>
+    <rect x="0.5" y="6.875" width="5.25" height="8.625" rx="0.9"/>
+  </g>
+</svg>

@@ -1,0 +1,9 @@
+{
+    "uuid": "kachel@julianbvw",
+    "name": "Kachel",
+    "description": "The button for Kachel, the launcher with a tile wall and search: a click shows or hides it.",
+    "max-instances": 1,
+    "version": "1.0",
+    "website": "https://github.com/JulianBvW/Kachel",
+    "author": "JulianBvW"
+}

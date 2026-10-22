@@ -32,6 +32,14 @@ for bad in (299, 2001, '680'):
     general, messages = settings.parse_general({'window': {'height': bad}})
     check(f'height = {bad!r} -> default and a message',
           general.height == 680 and has(messages, 'height'), messages)
+for value in (True, False, 'system'):
+    general, messages = settings.parse_general({'animations': value})
+    check(f'animations = {value!r} is taken', general.animations == value and not messages, messages)
+for bad in ('yes', 1, 'System'):
+    general, messages = settings.parse_general({'animations': bad})
+    check(f'animations = {bad!r} -> "system" and a message',
+          general.animations == 'system' and has(messages, 'animations'), messages)
+check('no animations key: "system"', settings.parse_general({})[0].animations == 'system')
 general, messages = settings.parse_general({'window': 3})
 check('[window] not a table', general.columns == 2 and messages, messages)
 general, messages = settings.parse_general({'window': {'colums': 3}})

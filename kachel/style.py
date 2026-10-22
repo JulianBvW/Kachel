@@ -12,7 +12,7 @@ gi.require_version('Gdk', '3.0')
 gi.require_version('Pango', '1.0')
 from gi.repository import Gdk, Gio, Gtk, Pango  # noqa: E402
 
-from . import query  # noqa: E402
+from . import anim, query  # noqa: E402
 
 FALLBACK_SIZE = 10.0   # points, if the font name carries no size
 
@@ -427,7 +427,7 @@ button.kachel-result:active {{
   outline: none;
   border-radius: 8px;
   padding: 0 14px;
-  min-height: 54px;
+  min-height: 0;   /* the row asks for its 54 px itself: a press margin must not add to it */
 }}
 button.kachel-result.selected {{
   background-color: rgba(255, 255, 255, 0.10);
@@ -453,6 +453,36 @@ button.kachel-result.selected {{
   border-radius: 5px;
   padding: 3px 7px;
 }}
+
+/* The effects (Design §12); the numbers come from anim.py. Set here for
+   every surface of ours, so the theme's own (slower) transition on
+   `button` does not apply. Press: GTK 3 has no transform, so the surface
+   takes a margin instead and shrinks around its content. */
+button.tile,
+button.shortcut,
+button.kachel-result,
+button.kachel-list-row,
+button.kachel-list-button,
+button.rail-entry,
+button.kachel-menu-row,
+button.kachel-menu-size,
+button.kachel-pill,
+button.kachel-search-button {{
+  transition: background-color {hover_ms}ms ease, box-shadow {hover_ms}ms ease,
+              margin {press_ms}ms ease-out;
+}}
+button.tile:active,
+button.kachel-result:active,
+button.kachel-list-row:active,
+button.rail-entry:active {{
+  margin: {press_margin}px;
+}}
+{effects_off}'''
+
+
+EFFECTS_OFF = f'''button.tile.hover {{
+  background-color: rgba(255, 255, 255, {anim.HOVER_FILL_OFF});
+}}
 '''
 
 
@@ -465,16 +495,22 @@ def base_size(font_name):
     return size if size > 0 else FALLBACK_SIZE
 
 
-def css(base, mono='Monospace'):
+def css(base, mono='Monospace', animated=True):
     '''The style sheet for a system font of `base` points, as bytes.
 
     `mono` is the family of the system's monospace font, for key hints.
+    Without `animated`, no transitions and no press; a tile under the
+    pointer gets a lighter fill instead of the glow.
     '''
     def pt(delta):
         return f'{base + delta:g}'
     sheet = TEMPLATE.format(base=pt(0), category=pt(-1.5), tile=pt(-1.5),
                             secondary=pt(-1), search=pt(5), name=pt(1),
-                            mono=mono.replace('"', ''))
+                            mono=mono.replace('"', ''),
+                            hover_ms=anim.HOVER_MS if animated else 0,
+                            press_ms=anim.PRESS_MS if animated else 0,
+                            press_margin=anim.PRESS_MARGIN if animated else 0,
+                            effects_off='' if animated else EFFECTS_OFF)
     return (sheet + pill_css()).encode('utf-8')
 
 
@@ -521,4 +557,5 @@ class Style:
     def refresh(self):
         name = Gtk.Settings.get_default().get_property('gtk-font-name')
         self._provider.load_from_data(css(base_size(name),
-                                          monospace_family()))
+                                          monospace_family(),
+                                          animated=anim.enabled()))

@@ -15,7 +15,7 @@ gi.require_version('Gdk', '3.0')
 gi.require_version('Pango', '1.0')
 from gi.repository import Gdk, Gtk, Pango  # noqa: E402
 
-from . import icons, layout, move  # noqa: E402
+from . import anim, icons, layout, move  # noqa: E402
 from .contextmenu import is_right_click  # noqa: E402
 
 # Icon size in pixels for each tile size.
@@ -40,6 +40,8 @@ GHOST_ALPHA = 0.6       # the copy at the pointer
 LIFTED_ALPHA = 0.4      # the tile at its old place
 FRAME_DASH = (6, 4)
 FRAME_RADIUS = 4        # as the tiles'
+
+TILE_RADIUS = 4         # as button.tile's border-radius in style.py
 
 EMPTY_HINT = ('Noch keine Kacheln — angeheftet wird in '
               '~/.config/kachel/tiles.toml')
@@ -69,6 +71,11 @@ class TileWall(Gtk.Box):
         self._boxes = {}          # id(tile) -> (its box, its rect)
         self._height = 0
         self._moving = None       # the tile in hand, or None
+        self._effects = {}        # tile button -> (Glow, IconScale)
+        self._header_rects = {}   # group name -> its header's Rect
+        self._order = []          # (tile, its box), as on the wall
+        self._glide_from = None   # where things were before a move
+        self._glide_tick = None
 
         # One line for what is wrong with the settings. Hidden when nothing is.
         self._error = Gtk.Label(xalign=0)
@@ -120,6 +127,7 @@ class TileWall(Gtk.Box):
         `columns` the number of group columns, `base` the settings folder.
         '''
         self.cancel_move(relayout=False)   # the tile in hand goes with the rest
+        self._stop_glide()
         for child in self._fixed.get_children():
             self._fixed.remove(child)
             child.destroy()
@@ -131,6 +139,9 @@ class TileWall(Gtk.Box):
         self._grid_origins = {}
         self._boxes = {}
         self._headers = {}
+        self._header_rects = {}
+        self._effects = {}
+        self._order = []
 
         arrangement = layout.arrange(groups, columns)
         for name, rect in arrangement.headers:
@@ -138,6 +149,7 @@ class TileWall(Gtk.Box):
                 rect.x, rect.y + layout.HEADER_HEIGHT + layout.HEADER_GAP)
             header = Gtk.Label(label=name, xalign=0)
             self._headers[name] = header
+            self._header_rects[name] = rect
             header.get_style_context().add_class('kachel-group-header')
             header.set_ellipsize(Pango.EllipsizeMode.END)
             header.set_size_request(rect.width, rect.height)
@@ -149,6 +161,7 @@ class TileWall(Gtk.Box):
             button = self._make_tile(tile, app, rect, base)
             self._fixed.put(button, rect.x, rect.y)
             self._boxes[id(tile)] = (button, rect)
+            self._order.append((tile, button))
 
         self._height = arrangement.height
         self._fixed.set_size_request(width, arrangement.height)
@@ -158,6 +171,10 @@ class TileWall(Gtk.Box):
         self._layer = MoveLayer(self._moved, self._dropped,
                                 self.cancel_move)
         self._fixed.put(self._layer, 0, 0)
+
+        if self._glide_from is not None:
+            self._glide(self._glide_from)
+            self._glide_from = None
 
         empty = not arrangement.tiles and not arrangement.headers
         self._hint.set_visible(empty)
@@ -196,9 +213,12 @@ class TileWall(Gtk.Box):
         overlay.add(button)
 
         if tile.shortcuts and tile.size in ('large', 'wide'):
-            self._with_shortcuts(overlay, tile, app, name, rect, base)
+            image = self._with_shortcuts(overlay, tile, app, name, rect, base)
         else:
-            self._plain(overlay, tile, app, name, rect, base)
+            image = self._plain(overlay, tile, app, name, rect, base)
+        self._effects[button] = (
+            anim.Glow(button, TILE_RADIUS),
+            anim.IconScale(image, anim.GROW_TILE).follow(button))
 
         # A box with a window of its own, so that the overlay's windows are
         # inside it: moving between them is then "inferior", not leaving.
@@ -206,7 +226,9 @@ class TileWall(Gtk.Box):
         box.set_visible_window(True)
         box.get_style_context().add_class('tile-box')
         box.add(overlay)
+        box.add_events(Gdk.EventMask.POINTER_MOTION_MASK)
         box.connect('enter-notify-event', self._ring, button, True)
+        box.connect('motion-notify-event', self._glow_follows, button)
         box.connect('button-press-event', self._pressed, ('tile', tile, app))
         box.connect('leave-notify-event', self._ring, button, False)
         return box
@@ -217,15 +239,24 @@ class TileWall(Gtk.Box):
             return True
         return False
 
-    @staticmethod
-    def _ring(_box, event, button, entering):
+    def _ring(self, box, event, button, entering):
         if not entering and event.detail == Gdk.NotifyType.INFERIOR:
             return False   # only moved onto something inside the tile
         context = button.get_style_context()
+        glow, scale = self._effects[button]
         if entering:
             context.add_class('hover')
+            glow.enter(*_inside(box, event))
         else:
             context.remove_class('hover')
+            glow.leave()
+        scale.hover(entering)
+        return False
+
+    def _glow_follows(self, box, event, button):
+        # From the root: the event may come from a window inside the tile
+        # (a shortcut button, the floating name), with coordinates of its own.
+        self._effects[button][0].move(*_inside(box, event))
         return False
 
     @staticmethod
@@ -240,6 +271,7 @@ class TileWall(Gtk.Box):
         image = icons.icon_widget(tile.icon, ICON_SIZES[tile.size],
                                   fallback=app.icon if app else None,
                                   base=base)
+        anim.make_room(image, ICON_SIZES[tile.size], anim.GROW_TILE)
         image.set_halign(Gtk.Align.CENTER)
         image.set_valign(Gtk.Align.CENTER)
         self._float(overlay, image)
@@ -259,6 +291,7 @@ class TileWall(Gtk.Box):
             label.set_margin_end(8)
             label.set_margin_bottom(6)
             self._float(overlay, label)
+        return image
 
     def _text_line(self, name, width):
         '''The one-line name that shows `› shortcut` while one is hovered.'''
@@ -334,14 +367,17 @@ class TileWall(Gtk.Box):
         image = icons.icon_widget(tile.icon, icon_size,
                                   fallback=app.icon if app else None,
                                   base=base)
+        # Room to grow into, taken from the space around: the icon itself
+        # stays exactly where it was.
+        pad = anim.make_room(image, icon_size, anim.GROW_TILE)
         image.set_valign(Gtk.Align.START)
         if large:
             image.set_halign(Gtk.Align.CENTER)
-            image.set_margin_top(SHORTCUT_PAD + (free - icon_size) // 2)
+            image.set_margin_top(SHORTCUT_PAD + (free - icon_size) // 2 - pad)
         else:
             image.set_halign(Gtk.Align.START)
-            image.set_margin_start(SHORTCUT_PAD)
-            image.set_margin_top(SHORTCUT_PAD)
+            image.set_margin_start(SHORTCUT_PAD - pad)
+            image.set_margin_top(SHORTCUT_PAD - pad)
         self._float(overlay, image)
         self._float(overlay, line)
         self._lines.append((line, name))
@@ -359,6 +395,7 @@ class TileWall(Gtk.Box):
                 button.set_margin_end(SHORTCUT_PAD
                                       + (count - 1 - index) * step)
             self._float(overlay, button, passive=False)
+        return image
 
     # -- moving a tile -----------------------------------------------------
 
@@ -417,11 +454,13 @@ class TileWall(Gtk.Box):
     def _relayout(self, extra):
         '''Put headers and tiles where layout.arrange says, with `extra`
         empty rows for some groups; the widgets stay, they only move.'''
+        self._stop_glide()   # it would pull them back to its own targets
         arrangement = layout.arrange(self._groups, self._columns, extra)
         for name, rect in arrangement.headers:
             self._grid_origins[name] = (
                 rect.x, rect.y + layout.HEADER_HEIGHT + layout.HEADER_GAP)
             self._fixed.move(self._headers[name], rect.x, rect.y)
+            self._header_rects[name] = rect
         for placement, rect in arrangement.tiles:
             box, _old = self._boxes[id(placement.tile)]
             self._boxes[id(placement.tile)] = (box, rect)
@@ -460,9 +499,43 @@ class TileWall(Gtk.Box):
         tile, spot = self._moving, self._spot
         if tile is not None and spot is not None and spot.change:
             self.cancel_move(relayout=False)
+            # The rebuild after the write glides from here.
+            self._glide_from = self._places()
             self._on_move(tile, spot)
         else:
             self.cancel_move()
+
+    # -- gliding -----------------------------------------------------------
+
+    def _keyed(self):
+        '''{key: (widget, Rect)} for every tile and header, with keys that
+        find the same tile again after a rebuild. Two equal tiles in a
+        group cannot be told apart that way: those do not glide.'''
+        found = {}
+        keys = [('tile', t.group, t.app, t.name, t.command)
+                for t, _box in self._order]
+        for key, (tile, box) in zip(keys, self._order):
+            if keys.count(key) == 1:
+                found[key] = (box, self._boxes[id(tile)][1])
+        for name, rect in self._header_rects.items():
+            found[('header', name)] = (self._headers[name], rect)
+        return found
+
+    def _stop_glide(self):
+        if self._glide_tick is not None:
+            self._fixed.remove_tick_callback(self._glide_tick)
+            self._glide_tick = None
+
+    def _places(self):
+        return {key: (rect.x, rect.y)
+                for key, (_widget, rect) in self._keyed().items()}
+
+    def _glide(self, before):
+        keyed = self._keyed()
+        after = {key: (rect.x, rect.y) for key, (_w, rect) in keyed.items()}
+        moves = [(keyed[key][0], start, end)
+                 for key, start, end in anim.glides(before, after)]
+        self._glide_tick = anim.glide(self._fixed, moves)
 
     def scroll_to_top(self):
         '''For the next show: the wall starts at its first row again.'''
@@ -480,6 +553,8 @@ class TileWall(Gtk.Box):
         without this the next show would greet you with a lit tile.'''
         for button in self._tile_buttons:
             button.get_style_context().remove_class('hover')
+            for effect in self._effects.get(button, ()):
+                effect.reset()
         for line, name in self._lines:
             line.set_text(name)
             line.get_style_context().remove_class('active')
@@ -573,3 +648,10 @@ def _rounded(cr, x, y, width, height, radius):
     cr.arc(x + radius, y + height - radius, radius, math.pi / 2, math.pi)
     cr.arc(x + radius, y + radius, radius, math.pi, 3 * math.pi / 2)
     cr.close_path()
+
+
+def _inside(widget, event):
+    '''The pointer of `event` in `widget`'s coordinates, whichever window
+    inside it the event came from.'''
+    _ok, x, y = widget.get_window().get_origin()
+    return event.x_root - x, event.y_root - y

@@ -28,4 +28,15 @@ check('key hints in the system monospace', 'font-family: "DejaVu Sans Mono";' in
 check('monospace family is read from the system',
       isinstance(style.monospace_family(), str) and style.monospace_family())
 
+section('effects')
+sheet = style.css(10).decode()
+check('our surfaces fade in 180 ms, not at the theme\'s pace',
+      'transition: background-color 180ms ease, box-shadow 180ms ease' in sheet)
+check('a pressed surface shrinks by 2 px a side', 'margin: 2px;' in sheet)
+off = style.css(10, animated=False).decode()
+check('without effects: no transition time, no press',
+      'background-color 0ms' in off and 'margin: 0px;' in off)
+check('without effects: a lighter fill instead of the glow',
+      'rgba(255, 255, 255, 0.13)' in off and 'rgba(255, 255, 255, 0.13)' not in sheet)
+
 harness.report()

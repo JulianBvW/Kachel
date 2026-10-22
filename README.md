@@ -12,11 +12,12 @@ Large tiles carry shortcuts: a terminal tile with buttons for
 
 ## Status
 
-Work in progress. What runs so far: a resident service, a pane of glass that
-`F7` shows and hides, the tile wall read from a file with shortcut buttons
-on its large tiles, the search over every installed app, with a
-calculator, the icon rail with folders and actions, and the list of all
-apps.
+In daily use, still beside the old menu. Everything described here works: a
+resident service, a pane of glass that the Super key or a panel button shows
+and hides, the tile wall with shortcut buttons on its large tiles, the search
+over apps and files with a calculator and scope pills, the icon rail with
+folders and actions, the list of all apps, and a right-click menu that
+changes the wall in place.
 
 ## Requirements
 
@@ -31,8 +32,14 @@ cd Kachel
 /usr/bin/python3 install.py
 ```
 
-It asks for one thing, the shortcut, and suggests `F7`. The shortcut is
-checked against the ones your desktop already holds before it is taken.
+It asks two things: the shortcut, suggesting the left Super key (`Super_L`)
+and checked against the ones your desktop and its panel applets already
+hold, and whether to put the Kachel button on the panel, first on the left
+(Enter: yes). A menu that sits there moves one along.
+
+If a menu applet holds the Super key, give it another one first, in its own
+settings (right-click it, **Configure**), or type another shortcut, e.g.
+`F7`.
 
 `/usr/bin/python3`, not `python3`: on a machine with conda or miniforge in the
 PATH the latter has no `gi`, and the script says so rather than failing at the
@@ -41,7 +48,24 @@ next login.
 The package is copied to `~/.local/share/kachel`, so the clone can be moved or
 deleted afterwards. `--in-place` wires it to the current folder instead, which
 is what you want while working on it. `--uninstall` takes everything back off,
-except your settings in `~/.config/kachel`.
+the panel button included, except your settings in `~/.config/kachel`.
+
+Besides the autostart entry it writes a hidden `.desktop` entry with
+Kachel's icon (for its notifications, and for the panel button to start it),
+the panel button's applet in `~/.local/share/cinnamon/applets/`, and its two
+logos into the icon theme in `~/.local/share/icons/`.
+
+## Panel button
+
+A button on the panel, like the start button of a menu: a click shows or
+hides Kachel, exactly as the shortcut does, in the middle of the screen. If
+Kachel is not running, the click starts it.
+
+Its icon is Kachel-Windrad, four tiles turning like a pinwheel. To change
+it, right-click the button, **Configure**: the group **Kachel** holds
+Windrad and Kachel-Layout (a large tile, two small ones and a wide one), the
+group **Linux** the usual start button icons, and every other icon of the
+theme or any file can be picked too.
 
 Cinnamon only: the shortcut goes through Cinnamon's own keybindings.
 
@@ -49,7 +73,7 @@ Cinnamon only: the shortcut goes through Cinnamon's own keybindings.
 
 | Key | |
 |---|---|
-| `F7` | show or hide |
+| `Super` | show or hide (whatever shortcut you installed it with) |
 | `Esc` | hide |
 | typing | search |
 | `↑` `↓` `Enter` | pick a result and run it |
@@ -159,9 +183,11 @@ leaves the last good wall in place.
 On first start Kachel writes commented skeletons. It never overwrites a
 file that is there.
 
-**`kachel.toml`** -- the window:
+**`kachel.toml`** -- effects and the window:
 
 ```toml
+animations = "system"   # true | false | "system" (Cinnamon's desktop effects)
+
 [window]
 columns = 2     # tile columns, 1-4; the width follows (1: 426, 2: 772 px)
 height  = 680
@@ -283,6 +309,21 @@ and `duration` (500-60000 ms).
 
 Leave out every `[[folder]]` (or every `[[action]]`) and the defaults come
 back; `folder = []` means none at all. `--grid` lists the rail too.
+
+## Animations
+
+Small and quick, none on opening -- that would be a wait every time:
+
+- the ring and fill of whatever is under the pointer fade in and out,
+- a soft light follows the pointer over a tile,
+- a tile's icon grows a little under the pointer, a rail icon too,
+- a pressed tile, row or rail entry sinks in and its icon shrinks,
+- tiles glide into place after a move,
+- the rail's action page and the app list slide.
+
+`animations = false` turns off all but the slides and the rising fill of an
+action that asks twice, which carry meaning. `"system"` follows Cinnamon's
+desktop effects, also while Kachel runs.
 
 ## Blur
 

@@ -48,4 +48,49 @@ check('stored lists are normalised, junk dropped',
       install.normalized(['<Mod4>s', 'garbage', 'F7']) == ['<Super>s', 'F7'],
       install.normalized(['<Mod4>s', 'garbage', 'F7']))
 
+section('with_applet')
+here = ['panel1:left:2:grouped-window-list@cinnamon.org:2', 'panel1:right:1:systray@cinnamon.org:3',
+        'panel1:right:12:cornerbar@cinnamon.org:14', 'panel1:left:0:menu@example:15']
+got = install.with_applet(here)
+check('first on the left, left of the menu, a new id',
+      got and got[-1] == 'panel1:left:0:kachel@julianbvw:16', got)
+check('the menu and the window list move one along, the right side stays',
+      got[:-1] == ['panel1:left:3:grouped-window-list@cinnamon.org:2', 'panel1:right:1:systray@cinnamon.org:3',
+                   'panel1:right:12:cornerbar@cinnamon.org:14', 'panel1:left:1:menu@example:15'], got)
+got = install.with_applet(['panel1:left:1:menu@example:1', 'panel1:right:0:calendar@cinnamon.org:3'])
+check('a free place: nothing else moves',
+      got == ['panel1:left:1:menu@example:1', 'panel1:right:0:calendar@cinnamon.org:3',
+              'panel1:left:0:kachel@julianbvw:4'], got)
+got = install.with_applet(['panel2:left:0:grouped-window-list@cinnamon.org:7'])
+check('only other panels: first on the left of the first panel',
+      got == ['panel2:left:0:grouped-window-list@cinnamon.org:7', 'panel1:left:0:kachel@julianbvw:8'], got)
+check('there already: None', install.with_applet(here + ['panel1:left:1:kachel@julianbvw:16']) is None)
+check('without_applet takes only ours',
+      install.without_applet(here + ['panel1:left:1:kachel@julianbvw:16']) == here)
+check('no applets at all', install.with_applet([]) == ['panel1:left:0:kachel@julianbvw:1'])
+
+section('applet_bindings')
+import json, tempfile
+from pathlib import Path
+with tempfile.TemporaryDirectory() as tmp:
+    spices = Path(tmp)
+    (spices / 'menu@example').mkdir()
+    (spices / 'menu@example' / '15.json').write_text(json.dumps({
+        'overlay-key': {'type': 'keybinding', 'value': 'Super_L::Super_R'},
+        'menu-icon': {'type': 'iconfilechooser', 'value': 'start-here'}}))
+    (spices / 'gone@example').mkdir()
+    (spices / 'gone@example' / '9.json').write_text(json.dumps({
+        'key': {'type': 'keybinding', 'value': 'F9'}}))
+    (spices / 'one@example').mkdir()
+    (spices / 'one@example' / 'one@example.json').write_text(json.dumps({
+        'key': {'type': 'keybinding', 'value': '<Super>x::'}, '__md5__': 'abc'}))
+    (spices / 'broken@example').mkdir()
+    (spices / 'broken@example' / '4.json').write_text('{ not json')
+    got = install.applet_bindings(['panel1:left:0:menu@example:15', 'panel1:left:1:one@example:3',
+                                   'panel1:left:2:broken@example:4', 'panel1:left:3:empty@example:5'], spices)
+    check('a menu on Super, a single-instance applet, broken and missing files skipped, only enabled ones',
+          got == {'the applet menu@example (overlay-key)': ['Super_L', 'Super_R'],
+                  'the applet one@example (key)': ['<Super>x']}, got)
+    check('Super_L counts as taken', install.accelerator_taken('Super_L', got) is not None)
+
 harness.report()

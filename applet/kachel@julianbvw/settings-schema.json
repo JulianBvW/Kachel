@@ -1,0 +1,59 @@
+{
+    "panel-icon": {
+        "type": "iconfilechooser",
+        "default": "kachel-windrad-symbolic",
+        "description": "Symbol im Panel",
+        "tooltip": "Symbol im Panel",
+        "icon_categories": [
+            {
+                "name": "Kachel",
+                "icons": [
+                    "kachel-windrad-symbolic",
+                    "kachel-layout-symbolic"
+                ]
+            },
+            {
+                "name": "Linux",
+                "icons": [
+                    "application-menu",
+                    "application-menu-symbolic",
+                    "cinnamon",
+                    "cinnamon-symbolic",
+                    "cinnamon-all-applications-symbolic",
+                    "distributor-logo",
+                    "emblem-favorite",
+                    "emblem-favorite-symbolic",
+                    "gnome-main-menu",
+                    "linuxmint-logo",
+                    "linuxmint-logo-badge",
+                    "linuxmint-logo-badge-symbolic",
+                    "linuxmint-logo-filled-badge",
+                    "linuxmint-logo-filled-leaf-badge",
+                    "linuxmint-logo-filled-leaf",
+                    "linuxmint-logo-filled-ring",
+                    "linuxmint-logo-leaf-badge",
+                    "linuxmint-logo-leaf-badge-symbolic",
+                    "linuxmint-logo-leaf",
+                    "linuxmint-logo-leaf-symbolic",
+                    "linuxmint-logo-neon",
+                    "linuxmint-logo-ring",
+                    "linuxmint-logo-ring-symbolic",
+                    "linuxmint-logo-simple",
+                    "linuxmint-logo-simple-symbolic",
+                    "open-menu",
+                    "open-menu-symbolic",
+                    "start-here",
+                    "start-here-symbolic",
+                    "start-here-archlinux",
+                    "start-here-debian",
+                    "start-here-fedora",
+                    "start-here-linux-mint",
+                    "start-here-opensuse",
+                    "start-here-ubuntu"
+                ]
+            }
+        ],
+        "default_category": "Kachel",
+        "default_icon": "kachel-windrad-symbolic"
+    }
+}

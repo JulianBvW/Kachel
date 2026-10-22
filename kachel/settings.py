@@ -29,6 +29,7 @@ class General:
     height: int = config.HEIGHT
     exclude: tuple = files.DEFAULT_EXCLUDE            # left out of @f
     exclude_names: tuple = files.DEFAULT_EXCLUDE_NAMES
+    animations: object = 'system'   # True, False or 'system'
 
 
 @dataclass
@@ -108,7 +109,7 @@ class Rail:
 
 
 # The keys each table may have. Anything else is reported as a typo.
-GENERAL_KEYS = {'window', 'files'}
+GENERAL_KEYS = {'animations', 'window', 'files'}
 WINDOW_KEYS = {'columns', 'height'}
 FILES_KEYS = {'exclude', 'exclude_names'}
 TILES_KEYS = {'groups', 'tile'}
@@ -129,6 +130,10 @@ class Wall:
 
 GENERAL_SKELETON = '''\
 # Kachel -- general settings. Saved changes apply at once.
+
+# Hover glow, growing icons, the press, tiles gliding into place: true,
+# false, or "system" to follow Cinnamon's desktop effects.
+animations = "system"
 
 [window]
 columns = 2     # tile columns, 1-4; the width follows (1: 426, 2: 772 px)
@@ -373,6 +378,13 @@ def parse_general(data, filename=config.GENERAL_FILE):
     general = General()
     messages = []
     _unknown_keys(data, GENERAL_KEYS, filename, messages)
+    animations = data.get('animations', 'system')
+    if isinstance(animations, bool) or animations == 'system':
+        general.animations = animations
+    else:
+        messages.append(f'{filename}: animations = {animations!r} geht nicht, '
+                        'erlaubt ist true, false oder "system" -- es gilt '
+                        '"system"')
     window = data.get('window', {})
     if not isinstance(window, dict):
         messages.append(f'{filename}: [window] ist kein Abschnitt')

@@ -7,7 +7,7 @@ gi.require_version('Gdk', '3.0')
 gi.require_version('Pango', '1.0')
 from gi.repository import Gdk, Gio, Gtk, Pango  # noqa: E402
 
-from . import icons  # noqa: E402
+from . import anim, icons  # noqa: E402
 from .contextmenu import is_right_click  # noqa: E402
 
 ROW_HEIGHT = 54
@@ -213,6 +213,7 @@ class ResultList(Gtk.Box):
         glyph.set_halign(Gtk.Align.CENTER)
         glyph.set_valign(Gtk.Align.CENTER)
         plate.set_center_widget(glyph)
+        anim.IconScale(glyph).follow(row)
         content.pack_start(plate, False, False, 0)
 
         texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)

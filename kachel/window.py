@@ -13,7 +13,7 @@ gi.require_version('Gtk', '3.0')
 gi.require_version('Gdk', '3.0')
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from . import (blur, cinnamon, config, files, geometry,  # noqa: E402
+from . import (anim, blur, cinnamon, config, files, geometry,  # noqa: E402
                icons, launch, listmodel, query, railmodel, search, settings,
                style, tomledit)
 from .applist import AppList  # noqa: E402
@@ -129,6 +129,8 @@ class KachelWindow(Gtk.Window):
         for path in written:
             self._log(f'wrote the skeleton {path}')
         self._reload_source = None
+        self._reload_only_if_changed = False
+        self._read_text = None
         self._apps_stale = False
         self._watch()
         self.reload()
@@ -215,6 +217,7 @@ class KachelWindow(Gtk.Window):
         as it is right, and what is wrong is reported.
         '''
         t0 = time.monotonic()
+        before = self._settings_text()
         if self._apps_stale:
             self._apps.reload()
             self._apps_stale = False
@@ -222,6 +225,7 @@ class KachelWindow(Gtk.Window):
         messages = self._setup_problems + messages
         if general is not None:
             self._general = general
+        self._apply_animations()
         wall, more, text = settings.load_tiles(self._config_dir,
                                                with_text=True)
         messages += more
@@ -257,6 +261,19 @@ class KachelWindow(Gtk.Window):
                   f'{(time.monotonic() - t0) * 1000:.1f} ms')
         for message in messages:
             self._log(f'  {message}')
+        # What was read, for skipping the watcher's echo of this very
+        # state; unsure if a file changed while it was being read.
+        after = self._settings_text()
+        self._read_text = before if before == after else None
+
+    def _apply_animations(self):
+        '''`animations` from kachel.toml, or Cinnamon's desktop effects.'''
+        on = anim.resolve(self._general.animations,
+                          getattr(self, '_effects_settings', None))
+        if on != anim.enabled():
+            anim.set_enabled(on)
+            self._style.refresh()
+            self._log(f'animations {"on" if on else "off"}')
 
     def _assemble_rail(self):
         return railmodel.assemble(self._rail_settings, railmodel.special_dir,
@@ -315,13 +332,21 @@ class KachelWindow(Gtk.Window):
                                                None)
         self._dirs_monitor.connect('changed', self._on_user_dirs_changed)
 
+        # animations = "system" follows Cinnamon's desktop effects, also
+        # when they are switched while Kachel runs.
+        self._effects_settings = anim.system_settings()
+        if self._effects_settings is not None:
+            self._effects_settings.connect(
+                'changed::desktop-effects',
+                lambda *_: self._apply_animations())
+
         self._app_monitor = Gio.AppInfoMonitor.get()
         self._app_monitor.connect('changed', self._on_apps_changed)
 
     def _on_folder_changed(self, _monitor, file, other, _event):
         names = {f.get_basename() for f in (file, other) if f is not None}
         if any(name.endswith('.toml') for name in names):
-            self._schedule_reload()
+            self._schedule_reload(only_if_changed=True)
 
     def _on_user_dirs_changed(self, *_args):
         GLib.reload_user_special_dirs_cache()
@@ -333,16 +358,36 @@ class KachelWindow(Gtk.Window):
         self._apps_stale = True
         self._schedule_reload()
 
-    def _schedule_reload(self):
+    def _schedule_reload(self, only_if_changed=False):
+        '''Reload after a pause. `only_if_changed`: skip it if the settings
+        files read exactly as at the last reload -- the watcher also sees
+        Kachel's own writes, which were reloaded at once.'''
         if self._reload_source is not None:
             GLib.source_remove(self._reload_source)
+            # A pending reload for another reason must still happen.
+            only_if_changed = only_if_changed and self._reload_only_if_changed
+        self._reload_only_if_changed = only_if_changed
         self._reload_source = GLib.timeout_add(config.RELOAD_DELAY_MS,
                                                self._reload_now)
 
     def _reload_now(self):
         self._reload_source = None
+        if self._reload_only_if_changed and not self._apps_stale \
+                and self._settings_text() == self._read_text:
+            return GLib.SOURCE_REMOVE
         self.reload()
         return GLib.SOURCE_REMOVE
+
+    def _settings_text(self):
+        '''The three settings files as they are now (None: missing).'''
+        found = []
+        for name in (config.GENERAL_FILE, config.TILES_FILE,
+                     config.RAIL_FILE):
+            try:
+                found.append((Path(self._config_dir) / name).read_bytes())
+            except OSError:
+                found.append(None)
+        return tuple(found)
 
     def _on_fontconfig_changed(self, *_args):
         # GTK rebuilds the font configuration in its own handler for this
@@ -570,9 +615,10 @@ class KachelWindow(Gtk.Window):
             self.reload()             # the file may have changed meanwhile
             self.wall.notice(problem)
         else:
-            # The folder watcher would see it too -- unless tiles.toml is a
-            # link to a file elsewhere.
-            self._schedule_reload()
+            # At once, not after the watcher's pause: a moved tile glides
+            # from where it was put down. (The watcher's own reload follows
+            # and finds the same wall.)
+            self.reload()
 
     def _on_menu_pick(self, entry, payload):
         what = self._menu_what
@@ -933,9 +979,9 @@ class KachelWindow(Gtk.Window):
     def _on_key_press(self, _widget, event):
         '''Keys for the search, taken before the input field sees them.
 
-        Esc hides, always. F7 is deliberately not handled here: the global
-        shortcut is a passive grab on the root window, so that key press
-        never reaches us -- both directions run through the toggle action.
+        Esc hides, always. The shortcut is deliberately not handled here:
+        it is a passive grab on the root window, so that key press never
+        reaches us -- both directions run through the toggle action.
         '''
         key = event.keyval
         ctrl = bool(event.state & Gdk.ModifierType.CONTROL_MASK)

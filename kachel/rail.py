@@ -15,7 +15,7 @@ gi.require_version('Gtk', '3.0')
 gi.require_version('Gdk', '3.0')
 from gi.repository import Gdk, Gtk  # noqa: E402
 
-from . import config, icons, railmodel  # noqa: E402
+from . import anim, config, icons, railmodel  # noqa: E402
 from .slide import Slider, cubic_bezier  # noqa: E402
 
 # The hairline on the rail's right edge is part of its 60 px. Whatever
@@ -78,13 +78,18 @@ class Entry(Gtk.Button):
         glyphs.set_halign(Gtk.Align.CENTER)
         glyphs.set_valign(Gtk.Align.CENTER)
         self._glyph = icons.icon_widget(icon, GLYPH, base=base)
-        glyphs.pack_start(self._glyph, False, False, 0)
+        self._glyph.set_halign(Gtk.Align.CENTER)
+        glyphs.pack_start(self._glyph, True, True, 0)
         self._check = None
         if confirm is not None:
             self._check = icons.icon_widget('ms:check', GLYPH)
+            self._check.set_halign(Gtk.Align.CENTER)
             self._check.set_no_show_all(True)
-            glyphs.pack_start(self._check, False, False, 0)
+            glyphs.pack_start(self._check, True, True, 0)
         self.add(glyphs)
+        # Room around the glyph to grow into under the pointer.
+        anim.make_room(glyphs, GLYPH, anim.GROW_RAIL)
+        self._scale = anim.IconScale(glyphs, anim.GROW_RAIL).follow(self)
         self.connect('draw', self._draw_fill)
 
         self.connect('enter-notify-event', self._enter)
@@ -106,6 +111,7 @@ class Entry(Gtk.Button):
     def _enter(self, _widget, event):
         if event.mode == Gdk.CrossingMode.NORMAL:
             self._show_tooltip()
+            self._scale.hover(True)
         return False
 
     def _leave(self, _widget, event):
@@ -114,6 +120,7 @@ class Entry(Gtk.Button):
         if event.mode != Gdk.CrossingMode.NORMAL:
             return False
         self._tooltip.hide_for(self)
+        self._scale.hover(False)
         if self._armed:
             self.disarm()
         return False
@@ -151,6 +158,7 @@ class Entry(Gtk.Button):
 
     def reset(self):
         '''Normal at once, no fall to watch: for the next show.'''
+        self._scale.reset()
         self._armed = False
         if self._confirm is not None:
             self._show_glyph(armed=False)
@@ -195,9 +203,12 @@ class Entry(Gtk.Button):
         hover background and the glyph.'''
         if self._level <= 0 or self._confirm is None:
             return False
-        width = self.get_allocated_width()
-        height = self.get_allocated_height()
+        # Inside the press margin, like the button's own background.
+        margin = self.get_style_context().get_margin(self.get_state_flags())
+        width = self.get_allocated_width() - margin.left - margin.right
+        height = self.get_allocated_height() - margin.top - margin.bottom
         cr.save()
+        cr.translate(margin.left, margin.top)
         # The entry's rounded shape as the clip, the fill rising inside it.
         r = RADIUS
         cr.new_sub_path()

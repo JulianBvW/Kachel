@@ -5,10 +5,11 @@
     /usr/bin/python3 install.py --in-place
     /usr/bin/python3 install.py --uninstall
 
-The one question it asks has a default; Enter accepts it. Nothing here needs
+Every question it asks has a default; Enter accepts it. Nothing here needs
 root, and nothing outside the user's own home is touched.
 '''
 
+import json
 import shutil
 import subprocess
 import sys
@@ -38,6 +39,24 @@ APP_ID = config.APP_ID
 
 INSTALL_DIR = Path.home() / '.local' / 'share' / 'kachel'
 AUTOSTART = Path.home() / '.config' / 'autostart' / 'kachel.desktop'
+# Kachel's own entry, hidden from menus: the icon for its notifications,
+# and how the panel button starts it when it is not running.
+APP_ENTRY = Path.home() / '.local' / 'share' / 'applications' / \
+    f'{APP_ID}.desktop'
+ICON_SOURCE = HERE / 'data' / f'{APP_ID}.svg'
+ICONS = Path.home() / '.local' / 'share' / 'icons' / 'hicolor' / \
+    'scalable' / 'apps'
+ICON = ICONS / f'{APP_ID}.svg'
+
+APPLET_UUID = 'kachel@julianbvw'
+APPLET_SOURCE = HERE / 'applet' / APPLET_UUID
+APPLET = Path.home() / '.local' / 'share' / 'cinnamon' / 'applets' / \
+    APPLET_UUID
+# The panel logos, also in the icon theme so the icon chooser of the
+# button's settings can offer them.
+LOGOS = ('kachel-windrad-symbolic', 'kachel-layout-symbolic')
+SPICES = Path.home() / '.config' / 'cinnamon' / 'spices'
+PANEL_SCHEMA = 'org.cinnamon'
 
 CUSTOM_SCHEMA = 'org.cinnamon.desktop.keybindings.custom-keybinding'
 CUSTOM_PATH = '/org/cinnamon/desktop/keybindings/custom-keybindings/'
@@ -59,10 +78,21 @@ Terminal=false
 X-GNOME-Autostart-enabled=true
 '''
 
+APP_DESKTOP_ENTRY = '''[Desktop Entry]
+Type=Application
+Name=Kachel
+Comment=Launcher with a tile wall and search
+Exec={python} -m {package} --daemon
+Path={path}
+Icon={icon}
+NoDisplay=true
+Terminal=false
+'''
+
 SHORTCUTS = (
     ('Kachel: show or hide', 'toggle'),
 )
-DEFAULT_ACCELERATORS = ('F7',)
+DEFAULT_ACCELERATORS = ('Super_L',)
 
 
 # -- the part that only computes, so it can be tested ---------------------
@@ -115,6 +145,36 @@ def normalize_accelerator(text):
     return Gtk.accelerator_name(key, mods)
 
 
+def with_applet(entries, uuid=APPLET_UUID):
+    '''org.cinnamon enabled-applets with our button added, or None if it is
+    there already. Entries read panel:zone:order:uuid:id.
+
+    It goes first on the left of the first panel, where a start button
+    sits, so the menu that is there now ends up right of it. Whatever sits
+    there moves one along, so the order stays as it was.
+    '''
+    parsed = [entry.split(':') for entry in entries]
+    if any(len(p) >= 4 and p[3] == uuid for p in parsed):
+        return None
+    ids = [int(p[4]) for p in parsed if len(p) >= 5 and p[4].isdigit()]
+    panel, zone, order = 'panel1', 'left', 0
+    same = [p for p in parsed
+            if len(p) >= 3 and p[0] == panel and p[1] == zone
+            and p[2].isdigit()]
+    if any(int(p[2]) == order for p in same):
+        for p in same:
+            if int(p[2]) >= order:
+                p[2] = str(int(p[2]) + 1)
+    new = f'{panel}:{zone}:{order}:{uuid}:{max(ids, default=0) + 1}'
+    return [':'.join(p) for p in parsed] + [new]
+
+
+def without_applet(entries, uuid=APPLET_UUID):
+    '''enabled-applets without our button.'''
+    return [entry for entry in entries
+            if entry.split(':')[3:4] != [uuid]]
+
+
 # -- asking ---------------------------------------------------------------
 
 def ask(question, default):
@@ -165,6 +225,35 @@ def current_bindings():
         label = settings.get_string('name') or slot
         bindings[f'custom shortcut "{label}"'] = normalized(
             settings.get_strv('binding'))
+
+    panel = panel_settings()
+    if panel is not None:
+        bindings.update(applet_bindings(panel.get_strv('enabled-applets')))
+    return bindings
+
+
+def applet_bindings(entries, spices=SPICES):
+    '''Shortcuts panel applets hold themselves, like a menu on the Super
+    key: they live in the applet's own settings, not the desktop's.'''
+    bindings = {}
+    for entry in entries:
+        parts = entry.split(':')
+        if len(parts) < 5 or parts[3] == APPLET_UUID:
+            continue
+        uuid, instance = parts[3], parts[4]
+        for name in (f'{instance}.json', f'{uuid}.json'):
+            try:
+                data = json.loads((spices / uuid / name).read_text())
+            except (OSError, ValueError):
+                continue
+            for key, setting in data.items():
+                if (isinstance(setting, dict)
+                        and setting.get('type') == 'keybinding'):
+                    held = normalized(
+                        str(setting.get('value', '')).split('::'))
+                    if held:
+                        bindings[f'the applet {uuid} ({key})'] = held
+            break
     return bindings
 
 
@@ -291,6 +380,74 @@ def stop_daemon():
     return False
 
 
+def write_app_entry(run_from):
+    APP_ENTRY.parent.mkdir(parents=True, exist_ok=True)
+    APP_ENTRY.write_text(
+        APP_DESKTOP_ENTRY.format(python=PYTHON, package=PACKAGE,
+                                 path=run_from, icon=APP_ID),
+        encoding='utf-8')
+    ICONS.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(ICON_SOURCE, ICON)
+    for logo in LOGOS:
+        shutil.copyfile(APPLET_SOURCE / f'{logo}.svg', ICONS / f'{logo}.svg')
+
+
+def _is_our_applet(path):
+    '''Ours: a link to an applet folder of Kachel, or a folder whose
+    metadata names our uuid.'''
+    if path.is_symlink():
+        return path.resolve().name == APPLET_UUID
+    try:
+        return f'"{APPLET_UUID}"' in (path / 'metadata.json').read_text()
+    except OSError:
+        return False
+
+
+def install_applet(in_place):
+    '''The panel button's files: linked to the clone with --in-place, so
+    changes to it apply without installing again, else copied.'''
+    if APPLET.is_symlink() or APPLET.exists():
+        if not _is_our_applet(APPLET):
+            sys.exit(f'{APPLET} exists and is not Kachel\'s. Refusing to '
+                     'touch it.')
+        if APPLET.is_symlink():
+            APPLET.unlink()
+        else:
+            shutil.rmtree(APPLET)
+    APPLET.parent.mkdir(parents=True, exist_ok=True)
+    if in_place:
+        APPLET.symlink_to(APPLET_SOURCE, target_is_directory=True)
+    else:
+        shutil.copytree(APPLET_SOURCE, APPLET)
+
+
+def panel_settings():
+    if not schema_keys(PANEL_SCHEMA):
+        return None
+    return Gio.Settings.new(PANEL_SCHEMA)
+
+
+def on_panel():
+    settings = panel_settings()
+    return settings is not None and with_applet(
+        settings.get_strv('enabled-applets')) is None
+
+
+def set_on_panel(on):
+    '''Add our button to the panel, or take it off. Cinnamon follows the
+    setting at once.'''
+    settings = panel_settings()
+    if settings is None:
+        return False
+    entries = settings.get_strv('enabled-applets')
+    changed = with_applet(entries) if on else without_applet(entries)
+    if changed is None or changed == entries:
+        return False
+    settings.set_strv('enabled-applets', changed)
+    Gio.Settings.sync()
+    return True
+
+
 def start_daemon(run_from):
     subprocess.Popen([PYTHON, '-m', PACKAGE, '--daemon'], cwd=str(run_from),
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -325,6 +482,11 @@ def install(in_place):
                 break
         accelerators.append(accelerator)
 
+    to_panel = False
+    if panel_settings() is not None and not on_panel():
+        to_panel = ask_yes('Put the Kachel button on the panel, first on '
+                           'the left?', True)
+
     run_from = HERE if in_place else INSTALL_DIR
     print()
     if in_place:
@@ -335,6 +497,14 @@ def install(in_place):
 
     write_autostart(run_from)
     print(f'  Wrote {AUTOSTART}')
+    write_app_entry(run_from)
+    print(f'  Wrote {APP_ENTRY} and the icons')
+    install_applet(in_place)
+    print(f'  {"Linked" if in_place else "Copied"} the panel button to '
+          f'{APPLET}')
+    if to_panel and set_on_panel(True):
+        print('  Put the button on the panel. Its icon: right-click it, '
+              'Configure.')
 
     slots = install_shortcuts(accelerators)
     keys = ', '.join(accelerators)
@@ -385,6 +555,23 @@ def uninstall():
     if AUTOSTART.exists():
         AUTOSTART.unlink()
         print(f'  Removed {AUTOSTART}')
+
+    if set_on_panel(False):
+        print('  Took the button off the panel')
+    if APPLET.is_symlink() or APPLET.exists():
+        if _is_our_applet(APPLET):
+            if APPLET.is_symlink():
+                APPLET.unlink()
+            else:
+                shutil.rmtree(APPLET)
+            print(f'  Removed {APPLET}')
+        else:
+            print(f'  Left {APPLET} alone: it is not Kachel\'s.')
+    logos = [ICONS / f'{logo}.svg' for logo in LOGOS]
+    for path in (APP_ENTRY, ICON, *logos):
+        if path.exists():
+            path.unlink()
+            print(f'  Removed {path}')
 
     # The same check as on installing: only a folder that is recognisably
     # ours goes, and the parent only if nothing else is left in it.
