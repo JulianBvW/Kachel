@@ -234,7 +234,11 @@ button.kachel-list-button.active {{
 .kachel-list-section {{
   padding: 0 10px;
 }}
-button.kachel-list-row {{
+/* In every state: the reset above names :hover and :active too, and
+   would otherwise pull the content to the edge under the pointer. */
+button.kachel-list-row,
+button.kachel-list-row:hover,
+button.kachel-list-row:active {{
   padding: 0 10px;
 }}
 button.kachel-list-row:hover {{
@@ -243,6 +247,10 @@ button.kachel-list-row:hover {{
 .kachel-list-plate {{
   background-color: rgba(255, 255, 255, 0.08);
   border-radius: 5px;
+}}
+/* The whole row is one box under the pointer; the icon's own goes. */
+button.kachel-list-row:hover .kachel-list-plate {{
+  background-color: transparent;
 }}
 .kachel-list-name {{
   font-size: {name}pt;
@@ -330,8 +338,12 @@ button.kachel-menu-row:disabled .ms-icon {{
 button.kachel-menu-row.armed {{
   background-color: rgba(239, 102, 97, 0.5);
 }}
-button.kachel-menu-size {{
+button.kachel-menu-size,
+button.kachel-menu-size:hover,
+button.kachel-menu-size:active {{
   padding: 0 4px;
+}}
+button.kachel-menu-size {{
   min-height: 0;
   font-size: {secondary}pt;
   background-color: rgba(255, 255, 255, 0.04);
@@ -470,6 +482,9 @@ button.kachel-pill,
 button.kachel-search-button {{
   transition: background-color {hover_ms}ms ease, box-shadow {hover_ms}ms ease,
               margin {press_ms}ms ease-out;
+}}
+.kachel-list-plate {{
+  transition: background-color {hover_ms}ms ease;
 }}
 button.tile:active,
 button.kachel-result:active,

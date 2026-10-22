@@ -33,4 +33,22 @@ section('on and off')
 check('true and false are taken as they are', anim.resolve(True) is True and anim.resolve(False) is False)
 check('"system" gives an answer', anim.resolve('system') in (True, False))
 
+section('app list')
+from kachel import applist
+check('a grown list icon fits its plate, which keeps its size',
+      applist.ICON + 2 * anim.room(applist.ICON, anim.GROW_LIST) <= applist.PLATE)
+
+section('segment_enters')
+middle = (0, 100, 100, 90)          # the tile between, of three in a column
+check('straight down through it: in at its top edge',
+      anim.segment_enters(middle, (50, 80), (50, 220)) == (50, 100))
+check('slanted: in where the line crosses the top',
+      anim.segment_enters(middle, (0, 0), (100, 200)) == (50, 100))
+check('beside it: missed', anim.segment_enters(middle, (150, 80), (150, 220)) is None)
+check('stops before it: missed', anim.segment_enters(middle, (50, 20), (50, 90)) is None)
+check('starts inside: the start', anim.segment_enters(middle, (50, 150), (50, 300)) == (50, 150))
+check('upwards: in at the bottom edge',
+      anim.segment_enters(middle, (50, 300), (50, 50)) == (50, 190))
+check('a single point outside: missed', anim.segment_enters(middle, (50, 50), (50, 50)) is None)
+
 harness.report()

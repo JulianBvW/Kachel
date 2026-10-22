@@ -13,7 +13,7 @@ SIZES = (('small', 'klein'), ('medium', 'mittel'), ('wide', 'breit'),
 
 @dataclass
 class Target:
-    kind: str                     # 'app', 'tile', 'file' or 'wall'
+    kind: str                     # 'app', 'tile', 'file', 'wall', 'rail'
     app_id: str = None
     actions: tuple = ()           # ((action, display name), ...) from .desktop
     groups: tuple = ()            # the wall's groups, in order
@@ -110,8 +110,13 @@ def menu_for(target):
         sections.append(first)
         sections.append([Entry('trash', 'In den Papierkorb', 'ms:delete',
                                confirm='Sicher? Nochmal klicken')])
-    elif target.kind == 'wall':
-        sections.append([Entry('edit-toml', 'tiles.toml bearbeiten',
-                               'ms:edit_note')])
+    elif target.kind in ('wall', 'rail'):
+        name = 'tiles.toml' if target.kind == 'wall' else 'rail.toml'
+        sections.append([
+            Entry('edit-toml', f'{name} bearbeiten', 'ms:edit_note',
+                  payload=name),
+            Entry('config-folder', 'Einstellungsordner öffnen',
+                  'ms:folder_open'),
+        ])
 
     return [entry for section in sections for entry in section]

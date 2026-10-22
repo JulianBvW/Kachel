@@ -149,15 +149,16 @@ back.
 
 ## Right-click
 
-Right-click a tile, a result, an app in the list or the empty wall for a
-menu:
+Right-click a tile, a result, an app in the list, the empty wall or the
+rail for a menu:
 
 | On | |
 |---|---|
 | an app | its own actions (New Window …), pin to the wall ▸ group (or take it off), add to the panel, to the desktop, to the favourites, uninstall |
 | a tile | its actions, size, move to another group ▸, move within the group, take off the wall (with its shortcuts), show in `tiles.toml`, and the app entries above |
 | a file | open with ▸, show in folder, copy path, open a terminal there, move to the trash (click twice) |
-| the empty wall | edit `tiles.toml` |
+| the empty wall | edit `tiles.toml`, open the settings folder `~/.config/kachel` |
+| the rail | edit `rail.toml`, open the settings folder |
 
 Everything that changes the wall edits `tiles.toml` in place: only the
 lines of that tile, its `size` or `group`, or the `groups` list change;
@@ -314,9 +315,12 @@ back; `folder = []` means none at all. `--grid` lists the rail too.
 
 Small and quick, none on opening -- that would be a wait every time:
 
-- the ring and fill of whatever is under the pointer fade in and out,
+- the ring and fill of whatever is under the pointer fade in and out; a
+  tile stays lit a moment, and tiles a fast pointer flew over light up
+  briefly too, so a quick sweep shows every tile it crossed,
 - a soft light follows the pointer over a tile,
-- a tile's icon grows a little under the pointer, a rail icon too,
+- a tile's icon grows a little under the pointer, a rail icon and an app's
+  icon in the list too (there its own plate gives way to the row's),
 - a pressed tile, row or rail entry sinks in and its icon shrinks,
 - tiles glide into place after a move,
 - the rail's action page and the app list slide.

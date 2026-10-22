@@ -18,7 +18,7 @@ from . import (anim, blur, cinnamon, config, files, geometry,  # noqa: E402
                style, tomledit)
 from .applist import AppList  # noqa: E402
 from .apps import AppIndex  # noqa: E402
-from .contextmenu import ContextMenu  # noqa: E402
+from .contextmenu import ContextMenu, is_right_click  # noqa: E402
 from .filesearch import FileSearch, Recent  # noqa: E402
 from .menumodel import Target, menu_for  # noqa: E402
 from .rail import Rail  # noqa: E402
@@ -161,7 +161,13 @@ class KachelWindow(Gtk.Window):
         self.tooltip = Tooltip()
         self.rail = Rail(on_folder=self._on_folder, on_action=self._on_action,
                          tooltip=self.tooltip)
-        main.pack_start(self.rail, False, False, 0)
+        # Right-click anywhere on the rail, entries included: the rail's
+        # menu. An input-only window, so that the empty part catches it.
+        rail_box = Gtk.EventBox()
+        rail_box.set_visible_window(False)
+        rail_box.add(self.rail)
+        rail_box.connect('button-press-event', self._rail_pressed)
+        main.pack_start(rail_box, False, False, 0)
         self.wall = TileWall(on_activate=self._on_activate,
                              on_shortcut=self._on_shortcut,
                              on_menu=self._open_menu,
@@ -536,7 +542,8 @@ class KachelWindow(Gtk.Window):
 
     def _open_menu(self, what, event=None, widget=None):
         '''what: ('tile', tile, app), ('app', app), ('result', result) or
-        ('wall',). At the pointer for a click, at `widget` for a key.'''
+        ('wall',) or ('rail',). At the pointer for a click, at `widget`
+        for a key.'''
         target = self._target(what)
         if target is None:
             return
@@ -552,12 +559,23 @@ class KachelWindow(Gtk.Window):
         self._menu_what = what
         self.menu.open(menu_for(target), x, y)
 
+    def _rail_pressed(self, _box, event):
+        if self.wall.moving:
+            # A tile in hand goes back. A right click does only that, as on
+            # the wall; a left click then does what it always does.
+            self.wall.cancel_move()
+            return is_right_click(event)
+        if is_right_click(event):
+            self._open_menu(('rail',), event)
+            return True
+        return False
+
     def _target(self, what):
         '''Gather the facts menu_for needs.'''
         groups = tuple(self._wall_settings.groups)
         kind = what[0]
-        if kind == 'wall':
-            return Target('wall')
+        if kind in ('wall', 'rail'):
+            return Target(kind)
         if kind == 'result':
             result = what[1]
             if result.kind == 'file':
@@ -631,8 +649,13 @@ class KachelWindow(Gtk.Window):
             return
         if id == 'edit-toml':
             self.menu.close()
-            self._done('tiles.toml', launch.edit_file(
-                self._wallfile.path, None, timestamp))
+            self._done(payload, launch.edit_file(
+                self._config_dir / payload, None, timestamp))
+            return
+        if id == 'config-folder':
+            self.menu.close()
+            self._done('the settings folder', launch.open_path(
+                str(self._config_dir), timestamp))
             return
 
         app = self._menu_app()

@@ -53,6 +53,10 @@ check('open with lists the apps, default first',
       [c.payload for c in entries[0].children] == ['xed.desktop', 'code.desktop'])
 check('the trash asks with a second click', entries[-1].confirm)
 check('no openers: no empty submenu', ids(menu_for(Target('file')))[0] == 'reveal')
-check('the wall: edit tiles.toml', ids(menu_for(Target('wall'))) == ['edit-toml'])
+for kind, name in (('wall', 'tiles.toml'), ('rail', 'rail.toml')):
+    menu = menu_for(Target(kind))
+    check(f'{kind}: edit {name}, then the settings folder',
+          ids(menu) == ['edit-toml', 'config-folder'] and menu[0].payload == name
+          and menu[0].label == f'{name} bearbeiten', [(e.id, e.label, e.payload) for e in menu])
 
 harness.report()

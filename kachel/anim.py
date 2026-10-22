@@ -24,8 +24,13 @@ from .slide import cubic_bezier  # noqa: E402
 # -- the values ---------------------------------------------------------
 
 HOVER_MS = 180          # ring and fill fade in and out (CSS)
+HOVER_MIN_MS = 100      # a tile stays lit at least this long: a quick
+                        # pass over it shows, rather than nothing
+FLYOVER_MS = 150        # a leave and the next enter this close together:
+                        # the tiles in between were flown over
 GROW_TILE = 1.12        # a tile's icon under the pointer
 GROW_RAIL = 1.14        # a rail icon under the pointer
+GROW_LIST = 1.15        # an icon in the app list under the pointer
 GROW_MS = 180
 PRESS_SCALE = 0.9       # an icon while its button is held down
 PRESS_MARGIN = 2        # px the surface shrinks by on each side (CSS)
@@ -94,6 +99,28 @@ def glides(before, after):
     not glide.'''
     return [(key, before[key], to) for key, to in after.items()
             if key in before and before[key] != to]
+
+
+def segment_enters(rect, p, q):
+    '''Where the line from `p` to `q` first gets into `rect` (x, y,
+    width, height): the point, or None if it misses it.'''
+    x, y, width, height = rect
+    (px, py), (qx, qy) = p, q
+    dx, dy = qx - px, qy - py
+    low, high = 0.0, 1.0
+    for step, start, lo, hi in ((dx, px, x, x + width),
+                                (dy, py, y, y + height)):
+        if step == 0:
+            if not lo <= start <= hi:
+                return None
+            continue
+        t0, t1 = (lo - start) / step, (hi - start) / step
+        if t0 > t1:
+            t0, t1 = t1, t0
+        low, high = max(low, t0), min(high, t1)
+        if low > high:
+            return None
+    return px + dx * low, py + dy * low
 
 
 # -- moving a value over time --------------------------------------------
@@ -170,10 +197,15 @@ class IconScale:
             self._pressed = on
             self._tween.to(self._target(), PRESS_MS)
 
-    def follow(self, button):
-        '''Shrink while `button` is held down.'''
-        button.connect('state-flags-changed', lambda b, _old: self.press(
-            bool(b.get_state_flags() & Gtk.StateFlags.ACTIVE)))
+    def follow(self, button, hover=False):
+        '''Shrink while `button` is held down; with `hover`, also grow
+        while the pointer is on it.'''
+        def changed(widget, _old):
+            flags = widget.get_state_flags()
+            if hover:
+                self.hover(bool(flags & Gtk.StateFlags.PRELIGHT))
+            self.press(bool(flags & Gtk.StateFlags.ACTIVE))
+        button.connect('state-flags-changed', changed)
         return self
 
     def reset(self):

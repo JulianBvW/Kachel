@@ -158,8 +158,10 @@ class AppList(Gtk.Box):
         glyph = icons.icon_widget(None, ICON, fallback=app.icon)
         glyph.set_halign(Gtk.Align.CENTER)
         glyph.set_valign(Gtk.Align.CENTER)
+        # Room to grow into, inside the plate: it stays PLATE wide.
+        anim.make_room(glyph, ICON, anim.GROW_LIST)
         plate.set_center_widget(glyph)
-        anim.IconScale(glyph).follow(row)
+        anim.IconScale(glyph, anim.GROW_LIST).follow(row, hover=True)
         content.pack_start(plate, False, False, 0)
 
         name = Gtk.Label(label=app.name, xalign=0)

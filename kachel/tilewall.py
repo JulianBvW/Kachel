@@ -13,7 +13,7 @@ import gi
 gi.require_version('Gtk', '3.0')
 gi.require_version('Gdk', '3.0')
 gi.require_version('Pango', '1.0')
-from gi.repository import Gdk, Gtk, Pango  # noqa: E402
+from gi.repository import Gdk, GLib, Gtk, Pango  # noqa: E402
 
 from . import anim, icons, layout, move  # noqa: E402
 from .contextmenu import is_right_click  # noqa: E402
@@ -72,6 +72,8 @@ class TileWall(Gtk.Box):
         self._height = 0
         self._moving = None       # the tile in hand, or None
         self._effects = {}        # tile button -> (Glow, IconScale)
+        self._lit = {}            # lit tile button -> (since, timeout id)
+        self._last_leave = None   # (x_root, y_root, event time) off a tile
         self._header_rects = {}   # group name -> its header's Rect
         self._order = []          # (tile, its box), as on the wall
         self._glide_from = None   # where things were before a move
@@ -128,6 +130,7 @@ class TileWall(Gtk.Box):
         '''
         self.cancel_move(relayout=False)   # the tile in hand goes with the rest
         self._stop_glide()
+        self.reset_hover()
         for child in self._fixed.get_children():
             self._fixed.remove(child)
             child.destroy()
@@ -240,18 +243,90 @@ class TileWall(Gtk.Box):
         return False
 
     def _ring(self, box, event, button, entering):
-        if not entering and event.detail == Gdk.NotifyType.INFERIOR:
-            return False   # only moved onto something inside the tile
-        context = button.get_style_context()
-        glow, scale = self._effects[button]
+        inferior = event.detail == Gdk.NotifyType.INFERIOR
         if entering:
-            context.add_class('hover')
-            glow.enter(*_inside(box, event))
-        else:
-            context.remove_class('hover')
-            glow.leave()
-        scale.hover(entering)
+            # Back from a shortcut button or the name counts too: the tile
+            # may have been reset under the pointer meanwhile.
+            if not inferior:
+                self._flown_over(button, event)
+            self._light(button, _inside(box, event))
+        elif not inferior:   # not just onto something inside the tile
+            self._last_leave = (event.x_root, event.y_root, event.time)
+            self._unlight(button)
         return False
+
+    def _light(self, button, at):
+        glow, scale = self._effects[button]
+        lit = self._lit.get(button)
+        if lit is not None:
+            if lit[1] is not None:            # was about to go out: stays
+                GLib.source_remove(lit[1])
+                self._lit[button] = (GLib.get_monotonic_time(), None)
+                glow.enter(*at)
+            return
+        self._lit[button] = (GLib.get_monotonic_time(), None)
+        button.get_style_context().add_class('hover')
+        glow.enter(*at)
+        scale.hover(True)
+
+    def _unlight(self, button):
+        '''Out, but not before it has been lit HOVER_MIN_MS: a pointer
+        that only passed through still leaves a trace.'''
+        lit = self._lit.get(button)
+        if lit is None or lit[1] is not None:
+            return
+        left = anim.HOVER_MIN_MS - (GLib.get_monotonic_time() - lit[0]) // 1000
+        if anim.enabled() and left > 0:
+            self._lit[button] = (lit[0], GLib.timeout_add(
+                left, self._out, button))
+        else:
+            self._out(button)
+
+    def _out(self, button):
+        if self._lit.pop(button, None) is None:
+            return False
+        button.get_style_context().remove_class('hover')
+        glow, scale = self._effects[button]
+        glow.leave()
+        scale.hover(False)
+        return False
+
+    def _flown_over(self, button, event):
+        '''A fast pointer can go from one tile to the next one but one
+        without a single event on the tile between. Those tiles light up
+        for a moment, as they would have: the ones on the straight line
+        from where it left a tile to where it came onto this one, inside
+        the visible part of the wall.'''
+        last, self._last_leave = self._last_leave, None
+        if last is None or not anim.enabled() \
+                or not 0 <= event.time - last[2] <= anim.FLYOVER_MS:
+            return
+        start, end = last[:2], (event.x_root, event.y_root)
+        # Two origins, not one per tile: each is a round trip to X.
+        _ok, wx, wy = self._fixed.get_window().get_origin()
+        top = self.get_toplevel()
+        found = self._scroller.translate_coordinates(top, 0, 0)
+        if not found or top.get_window() is None:
+            return
+        _ok, tx, ty = top.get_window().get_origin()
+        view = (tx + found[0], ty + found[1],
+                self._scroller.get_allocated_width(),
+                self._scroller.get_allocated_height())
+        if anim.segment_enters(view, start, start) is None \
+                or anim.segment_enters(view, end, end) is None:
+            return   # it left the wall in between
+        for other in self._tile_buttons:
+            box = other.get_ancestor(Gtk.EventBox)
+            if other is button or other in self._lit or box is None \
+                    or not box.get_mapped():
+                continue
+            area = box.get_allocation()
+            x, y = wx + area.x, wy + area.y
+            hit = anim.segment_enters((x, y, area.width, area.height),
+                                      start, end)
+            if hit is not None:
+                self._light(other, (hit[0] - x, hit[1] - y))
+                self._unlight(other)
 
     def _glow_follows(self, box, event, button):
         # From the root: the event may come from a window inside the tile
@@ -551,6 +626,11 @@ class TileWall(Gtk.Box):
         '''Rings off, names back. Clicking a button hides the window under
         a resting pointer, and no leave event comes to undo the hover --
         without this the next show would greet you with a lit tile.'''
+        for _since, timeout in self._lit.values():
+            if timeout is not None:
+                GLib.source_remove(timeout)
+        self._lit = {}
+        self._last_leave = None
         for button in self._tile_buttons:
             button.get_style_context().remove_class('hover')
             for effect in self._effects.get(button, ()):
