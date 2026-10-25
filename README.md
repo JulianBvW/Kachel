@@ -81,9 +81,10 @@ Cinnamon only: the shortcut goes through Cinnamon's own keybindings.
 | `Ctrl+1` … `Ctrl+9` | run result 1 to 9 at once |
 | `@a␣` `@w␣` `@tldr␣` `=␣` | narrow the search to a scope (see below) |
 | `Tab` | take the highlighted `@` suggestion |
-| `Backspace` in an empty field | drop the last pill |
+| `Backspace` or `Ctrl+Backspace` in front of the text | drop the last pill |
 | `Ctrl+Enter`, Ctrl+click | show a file in its folder |
-| `Ctrl+Backspace` | clear the search and the pill, back to the tiles |
+| `Ctrl+Backspace` | delete the word before the cursor |
+| `Alt+Backspace` | clear the search and the pills, back to the tiles |
 
 Clicking anywhere else hides it too. Hidden is not closed: the service keeps
 running, which is why the window is there the instant the key is pressed.

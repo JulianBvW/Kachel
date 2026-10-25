@@ -1084,9 +1084,11 @@ class KachelWindow(Gtk.Window):
                 and self._body.get_visible_child_name() == 'results':
             self.results.menu_for_selected()
             return True
-        if ctrl and key == Gdk.KEY_BackSpace:
-            # Instead of the field's own "delete a word": everything goes,
-            # back to the wall or the app list, whichever was showing.
+        if event.state & Gdk.ModifierType.MOD1_MASK \
+                and key == Gdk.KEY_BackSpace:
+            # Alt: everything goes, back to the wall or the app list,
+            # whichever was showing. Ctrl+Backspace is the field's own
+            # "delete a word", as everywhere else.
             self.searchbar.clear()
             return True
 

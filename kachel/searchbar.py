@@ -244,11 +244,11 @@ class SearchBar(Gtk.Box):
 
     def _key_pressed(self, entry, event):
         '''Backspace in front of everything takes a pill away: the last
-        extra pill first, then the scope (Design §11.5).'''
+        extra pill first, then the scope (Design §11.5). Ctrl+Backspace
+        too -- the pill is the word before the cursor.'''
         if event.keyval == Gdk.KEY_BackSpace and self._scope is not None \
                 and entry.get_position() == 0 \
-                and not entry.get_selection_bounds() \
-                and not event.state & Gdk.ModifierType.CONTROL_MASK:
+                and not entry.get_selection_bounds():
             if self._extras:
                 self._drop_extra(self._extras[-1])
             else:
