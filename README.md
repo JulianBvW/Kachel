@@ -303,8 +303,8 @@ At most six actions, in file order. Up to four fit on one page; with five
 or six, the fourth place turns to a second page. An action takes
 `terminal = true` like a shortcut. With `confirm`, the first click only
 arms it: the icon turns into a check mark and a coloured fill rises; a
-second click before it reaches the top runs the action, moving away
-disarms it. `confirm = true` takes the defaults ("Sicher?", red, 4000 ms);
+second click before it reaches the top runs the action -- a double-click
+too -- and moving away disarms it. `confirm = true` takes the defaults ("Sicher?", red, 4000 ms);
 a table can set `label`, `color` (`#rrggbb`, `#rrggbbaa` or `rgba(...)`)
 and `duration` (500-60000 ms).
 

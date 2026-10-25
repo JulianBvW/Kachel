@@ -7,7 +7,6 @@ rises, and only a second click before it reaches the top runs it.
 '''
 
 import math
-import time
 
 import gi
 
@@ -37,10 +36,6 @@ NAVIGATION = {
 }
 
 
-def double_click_ms():
-    return Gtk.Settings.get_default().get_property('gtk-double-click-time')
-
-
 def linear(t):
     return t
 
@@ -63,7 +58,6 @@ class Entry(Gtk.Button):
         self._on_click = on_click
         self._confirm = confirm
         self._armed = False
-        self._armed_at = 0.0       # time.monotonic() of the arming click
         self._level = 0.0          # how far the fill has risen, 0 to 1
         self._animation = None     # (from, to, µs, ease, start or None)
         self._tick = None
@@ -128,13 +122,10 @@ class Entry(Gtk.Button):
     # -- clicking and confirming ---------------------------------------
 
     def _clicked(self, _button):
+        # A double-click goes through: two clicks are a decision, however
+        # quick. Confirming guards against a single stray click.
         if self._confirm is not None and not self._armed:
             self.arm()
-            return
-        if self._armed and (time.monotonic() - self._armed_at) * 1000 \
-                < double_click_ms():
-            # The second half of a double-click, not a decision: a habit
-            # of double-clicking must not switch the machine off.
             return
         self._tooltip.hide_now()
         self._on_click(Gtk.get_current_event_time())
@@ -143,7 +134,6 @@ class Entry(Gtk.Button):
         '''First click: the check mark, the confirm text, and the fill
         rising linearly over the confirm duration.'''
         self._armed = True
-        self._armed_at = time.monotonic()
         self._show_glyph(armed=True)
         self._animate(0.0, 1.0, self._confirm.duration, linear)
         self._show_tooltip()
