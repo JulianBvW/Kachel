@@ -466,6 +466,45 @@ button.kachel-result.selected {{
   padding: 3px 7px;
 }}
 
+/* A tldr page (Design §11.2) in place of the result list. */
+.kachel-tldr-head {{
+  padding: 8px 14px 10px 14px;
+}}
+.kachel-tldr-title {{
+  font-size: {name}pt;
+  font-weight: 600;
+  color: #F3F3F3;
+}}
+.kachel-tldr-desc {{
+  color: rgba(255, 255, 255, 0.55);
+}}
+button.kachel-tldr-example,
+button.kachel-tldr-example:hover,
+button.kachel-tldr-example:active {{
+  background-image: none;
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+  text-shadow: none;
+  outline: none;
+  border-radius: 8px;
+  padding: 10px 14px;
+  min-height: 0;
+}}
+button.kachel-tldr-example.selected {{
+  background-color: rgba(255, 255, 255, 0.10);
+}}
+.kachel-tldr-text {{
+  color: #F3F3F3;
+}}
+.kachel-tldr-chip {{
+  font-family: "{mono}";
+  color: #8ce5d3;   /* oklch(0.86 0.09 180) */
+  background-color: rgba(0, 0, 0, 0.25);
+  border-radius: 4px;
+  padding: 6px 10px;
+}}
+
 /* The effects (Design §12); the numbers come from anim.py. Set here for
    every surface of ours, so the theme's own (slower) transition on
    `button` does not apply. Press: GTK 3 has no transform, so the surface
@@ -473,6 +512,7 @@ button.kachel-result.selected {{
 button.tile,
 button.shortcut,
 button.kachel-result,
+button.kachel-tldr-example,
 button.kachel-list-row,
 button.kachel-list-button,
 button.rail-entry,

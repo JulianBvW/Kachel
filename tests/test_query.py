@@ -20,6 +20,9 @@ check('case does not count', scope is not None and scope.code == 'w')
 for typed in ('@x ', 'a@b.de ', '@w', '@ai ', '@before:2025 '):
     scope, text, _ = query.take_pill(typed, len(typed))
     check(f'{typed!r} stays text', scope is None and text == typed, scope)
+scope, text, cursor = query.take_pill('@tldr tar', 9)
+check('@tldr + space: the tldr pill',
+      (scope.code, text, cursor) == ('tldr', 'tar', 3), (scope, text, cursor))
 scope, text, _ = query.take_pill('@x @a hi', 8)
 check('an unknown one before a known one is skipped',
       scope.code == 'a' and text == '@x hi', text)
@@ -55,7 +58,8 @@ check('after a space: empty word', query.word_at('foo ', 4) == (4, ''))
 check('empty text', query.word_at('', 0) == (0, ''))
 
 section('suggestions')
-check('@ alone: every active scope', [s.code for s in query.suggestions('@')] == ['f', 'a', 'w'])
+check('@ alone: every active scope', [s.code for s in query.suggestions('@')] == ['f', 'a', 'w', 'tldr'])
+check('@t: tldr', [s.code for s in query.suggestions('@t')] == ['tldr'])
 check('@w: only Web', [s.code for s in query.suggestions('@w')] == ['w'])
 check('@f: the files', [s.code for s in query.suggestions('@f')] == ['f'])
 check('@ai: nothing yet (switched off)', query.suggestions('@ai') == [])

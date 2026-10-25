@@ -15,7 +15,7 @@ from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from . import (anim, blur, cinnamon, config, files, geometry,  # noqa: E402
                icons, launch, listmodel, query, railmodel, search, settings,
-               style, tomledit)
+               style, tldr, tomledit)
 from .applist import AppList  # noqa: E402
 from .apps import AppIndex  # noqa: E402
 from .contextmenu import ContextMenu, is_right_click  # noqa: E402
@@ -27,6 +27,7 @@ from .searchbar import SearchBar  # noqa: E402
 from .slide import Slider  # noqa: E402
 from .suggest import Suggestions  # noqa: E402
 from .tilewall import TileWall  # noqa: E402
+from .tldrview import TldrView  # noqa: E402
 from .tooltip import Tooltip  # noqa: E402
 from .wallfile import WallFile  # noqa: E402
 
@@ -114,6 +115,8 @@ class KachelWindow(Gtk.Window):
         self._files = FileSearch(on_done=self._on_files, verbose=verbose)
         self._file_source = None   # the pause before plocate starts
         self._file_query = ('', (), ())   # text, recent hits shown, extras
+        self._tldr = tldr.TldrStore(on_ready=self._on_tldr_ready,
+                                    call_soon=GLib.idle_add)
         self._general = settings.General()
         self._wall_settings = settings.Wall()
         self._wallfile = WallFile(self._config_dir)
@@ -193,14 +196,17 @@ class KachelWindow(Gtk.Window):
             on_activate=self._on_result,
             on_menu=lambda result, event, row: self._open_menu(
                 ('result', result), event, row))
+        self.tldrview = TldrView(on_copy=self._on_tldr_copy)
         for side in ('top', 'bottom', 'start', 'end'):
             getattr(self.results, f'set_margin_{side}')(10)
+            getattr(self.tldrview, f'set_margin_{side}')(10)
 
         # No transition: switching is a redraw, not an animation to wait for.
         self._body = Gtk.Stack()
         self._body.set_transition_type(Gtk.StackTransitionType.NONE)
         self._body.add_named(overlay, 'main')
         self._body.add_named(self.results, 'results')
+        self._body.add_named(self.tldrview, 'tldr')
         root.pack_start(self._body, True, True, 0)
 
         # The @ suggestions float over everything below the search bar.
@@ -429,6 +435,9 @@ class KachelWindow(Gtk.Window):
         if code == 'f':
             self._search_files(text, extras)
             return
+        if code == 'tldr':
+            self._search_tldr(text)
+            return
         # The sorted list is only needed for @a with nothing typed.
         listed = self._apps.visible() if code == 'a' and not text.strip() \
             else ()
@@ -507,6 +516,42 @@ class KachelWindow(Gtk.Window):
         self.results.show_results(rows, search.file_header(
             text, len(rows), truncated=truncated))
         self._log(f'files {text!r}: {len(rows)} rows')
+
+    # -- tldr ------------------------------------------------------------
+
+    def _search_tldr(self, text):
+        '''@tldr: the page when the name is exact, else the names that fit.
+        The pages are fetched the first time, so the pill alone starts it.'''
+        store = self._tldr
+        store.ensure()
+        rows, header = [], 'Befehl eingeben'
+        if store.ready and text.strip():
+            page = store.page(tldr.page_name(text))
+            if page is not None:
+                self.tldrview.show_page(page)
+                self._body.set_visible_child_name('tldr')
+                return
+            rows = [search.Result('tldr', name, store.description(name),
+                                  value=name)
+                    for name in tldr.matches(text, store.names())]
+            header = search.tldr_header(text, len(rows))
+        elif not store.ready and store.busy:
+            header = 'tldr-Seiten werden geladen…'
+        elif not store.ready and store.problem:
+            rows = [search.Result('problem', store.problem, '')]
+            header = 'tldr'
+        self.results.show_results(rows, header)
+        self._body.set_visible_child_name('results')
+
+    def _on_tldr_ready(self):
+        '''The pages are there, or will not come: ask again.'''
+        scope = self.searchbar.scope
+        if self.get_visible() and scope is not None and scope.code == 'tldr':
+            self._search_tldr(self.searchbar.text)
+
+    def _on_tldr_copy(self, text, _timestamp):
+        self._copy(text)
+        self._done(text, None)
 
     def _on_word(self, word):
         '''The word at the cursor changed: offer scopes for an @word,
@@ -777,16 +822,24 @@ class KachelWindow(Gtk.Window):
                 if reveal else launch.open_path(result.value, timestamp)
         elif result.kind == 'app':
             problem = launch.launch_app(result.app.info, timestamp)
+        elif result.kind == 'tldr':
+            # A command's name: its page, in place of the list.
+            self.searchbar.set_text(result.value)
+            return
         elif result.kind == 'calc':
-            clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
-            clipboard.set_text(result.value, -1)
-            # The service keeps running, so the clipboard stays filled
-            # after the window is gone -- no clipboard manager needed.
-            clipboard.store()
+            self._copy(result.value)
             problem = None
         else:
             problem = launch.open_uri(result.value, timestamp)
         self._done(result.title, problem)
+
+    @staticmethod
+    def _copy(text):
+        clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+        clipboard.set_text(text, -1)
+        # The service keeps running, so the clipboard stays filled after
+        # the window is gone -- no clipboard manager needed.
+        clipboard.store()
 
     def _on_shortcut(self, shortcut, _timestamp):
         '''A shortcut button: its command, in a terminal or quietly.'''
@@ -1054,22 +1107,25 @@ class KachelWindow(Gtk.Window):
                 and (self.searchbar.text or self.searchbar.scope):
             return True   # mid-search, Tab must not wander off the field
 
-        if self._body.get_visible_child_name() != 'results':
+        # The result list, or a tldr page in its place: the same keys.
+        view = {'results': self.results, 'tldr': self.tldrview}.get(
+            self._body.get_visible_child_name())
+        if view is None:
             return False
         if key in (Gdk.KEY_Down, Gdk.KEY_KP_Down):
-            self.results.move(1)
+            view.move(1)
             return True
         if key in (Gdk.KEY_Up, Gdk.KEY_KP_Up):
-            self.results.move(-1)
+            view.move(-1)
             return True
         if key in (Gdk.KEY_Return, Gdk.KEY_KP_Enter, Gdk.KEY_ISO_Enter):
-            self.results.activate_selected(event.time, reveal=ctrl)
+            view.activate_selected(event.time, reveal=ctrl)
             return True
         if ctrl and Gdk.KEY_1 <= key <= Gdk.KEY_9:
-            self.results.activate(key - Gdk.KEY_1, event.time)
+            view.activate(key - Gdk.KEY_1, event.time)
             return True
         if ctrl and Gdk.KEY_KP_1 <= key <= Gdk.KEY_KP_9:
-            self.results.activate(key - Gdk.KEY_KP_1, event.time)
+            view.activate(key - Gdk.KEY_KP_1, event.time)
             return True
         return False
 

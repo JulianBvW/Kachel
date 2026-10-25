@@ -15,7 +15,8 @@ Large tiles carry shortcuts: a terminal tile with buttons for
 In daily use, still beside the old menu. Everything described here works: a
 resident service, a pane of glass that the Super key or a panel button shows
 and hides, the tile wall with shortcut buttons on its large tiles, the search
-over apps and files with a calculator and scope pills, the icon rail with
+over apps and files with a calculator and scope pills, short help for
+commands from the tldr pages, the icon rail with
 folders and actions, the list of all apps, and a right-click menu that
 changes the wall in place.
 
@@ -78,7 +79,7 @@ Cinnamon only: the shortcut goes through Cinnamon's own keybindings.
 | typing | search |
 | `↑` `↓` `Enter` | pick a result and run it |
 | `Ctrl+1` … `Ctrl+9` | run result 1 to 9 at once |
-| `@a␣` `@w␣` `=␣` | narrow the search to a scope (see below) |
+| `@a␣` `@w␣` `@tldr␣` `=␣` | narrow the search to a scope (see below) |
 | `Tab` | take the highlighted `@` suggestion |
 | `Backspace` in an empty field | drop the last pill |
 | `Ctrl+Enter`, Ctrl+click | show a file in its folder |
@@ -120,6 +121,7 @@ into a pill in front of the field; typing `@` alone lists the scopes.
 | `@a` Apps | apps only, no calculator; with nothing typed, every app from A to Z |
 | `@f` Files | every file on the disk, through plocate (see below) |
 | `@w` Web | your words on DuckDuckGo; bangs work (`minecraft !yt`) |
+| `@tldr` tldr | short help for a command (see below) |
 | `=` Calculator | at the very start: everything is a calculation |
 
 Click the pill, or press Backspace in the empty field, to drop it.
@@ -133,6 +135,19 @@ nothing typed it lists the recent files. Narrow it with extra pills:
 `MM.YYYY`, `DD.MM.YYYY` or `MM/DD/YYYY`; the date itself never counts, so
 `@before:2026` ends on 31.12.2025). Enter opens a file, Ctrl+Enter or
 Ctrl+click shows it in its folder.
+
+**tldr.** `@tldr tar` shows the [tldr page](https://tldr.sh) for `tar` in
+place of the list: what it does, and one row per example with the command
+in a chip, placeholders in italics. `↑` `↓` pick an example; Enter, a click
+or `Ctrl+1` … `Ctrl+9` copies it -- placeholders without their braces, an
+option given in both forms (`{{[-C|--directory]}}`) in its long one -- and
+hides Kachel. A name that is not exact lists the commands that fit
+(`@tldr ta`); spaces count as dashes, so `@tldr git commit` is the page
+`git-commit`. Only the English pages for Linux and every system are used.
+They come as one zip (about 3,5 MB) from the tldr project into
+`~/.cache/kachel/` the first time `@tldr` is used, and again when it is a
+week old -- fetched in the background, read where it lies. Nothing is
+installed.
 
 `plocate`'s database is updated once a day, so a file from this morning
 may only turn up tomorrow (`sudo updatedb` to hurry it) -- unless you

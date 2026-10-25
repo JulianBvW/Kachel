@@ -3,8 +3,8 @@
 An abbreviation followed by a space -- `@a ` or `@w ` -- turns into a pill
 and leaves the text; so does `= ` at the very start, for the calculator.
 Words starting with `@` that are not abbreviations (mail addresses, say)
-stay text. The abbreviations for AI and tldr are known already but not
-switched on yet.
+stay text. The abbreviation for AI is known already but not switched on
+yet.
 
 With the files pill, `@type:pdf `, `@before:2025 ` and `@after:10.2026 `
 become extra pills that narrow the files further.
@@ -43,7 +43,7 @@ SCOPES = (
     Scope('ai', 'KI', 'ms:auto_awesome', 'eine KI fragen',
           '#d6b4ff', '#3a1a5c', active=False),
     Scope('tldr', 'tldr', 'ms:terminal', 'Befehle nachschlagen',
-          '#7fd9d0', '#00302c', active=False),
+          '#7fd9d0', '#00302c'),
     # Typed as '= ' at the very start, never offered after an @.
     Scope('=', 'Rechner', 'ms:calculate', 'rechnen, auch mit Funktionen',
           '#d6c665', '#312900', key='calc', prefix=''),

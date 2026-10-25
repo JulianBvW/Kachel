@@ -44,6 +44,7 @@ FALLBACK = {
     'restart_alt': 'system-reboot-symbolic',
     'logout': 'system-log-out-symbolic',
     'lock': 'system-lock-screen-symbolic',
+    'terminal': 'utilities-terminal-symbolic',
 }
 GENERIC_ICON = 'application-x-executable'
 

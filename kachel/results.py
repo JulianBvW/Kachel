@@ -22,7 +22,7 @@ KEY_HINTS = 9    # Ctrl+1 ... Ctrl+9
 
 # The symbol for rows that are not apps.
 KIND_ICONS = {'calc': 'ms:calculate', 'web': 'ms:public',
-              'problem': 'ms:error'}
+              'problem': 'ms:error', 'tldr': 'ms:terminal'}
 
 
 class ResultList(Gtk.Box):
@@ -83,7 +83,7 @@ class ResultList(Gtk.Box):
         self._header.set_text(header)
         # Where the pointer rests now does not count as a move; only
         # leaving this spot does.
-        self._pointer = self._pointer_position()
+        self._pointer = pointer_position()
         self.select(0)
 
     def _load_more(self):
@@ -174,17 +174,9 @@ class ResultList(Gtk.Box):
             self._on_menu(self._results[self._selected], None,
                           self._rows[self._selected])
 
-    def _pointer_position(self):
-        seat = Gdk.Display.get_default().get_default_seat()
-        pointer = seat.get_pointer() if seat is not None else None
-        if pointer is None:
-            return None
-        _screen, x, y = pointer.get_position()
-        return (float(x), float(y))
-
     def _moved(self, _row, event, index):
-        where = (float(int(event.x_root)), float(int(event.y_root)))
-        if where != self._pointer:
+        where = moved_to(event, self._pointer)
+        if where is not None:
             self._pointer = where
             if index != self._selected:
                 self.select(index, scroll=False)
@@ -243,6 +235,24 @@ class ResultList(Gtk.Box):
         row.connect('clicked', lambda *_: self.activate(
             index, Gtk.get_current_event_time(), reveal=ctrl_held()))
         return row
+
+
+def pointer_position():
+    '''Where the pointer is on the screen, as (x, y), or None.'''
+    seat = Gdk.Display.get_default().get_default_seat()
+    pointer = seat.get_pointer() if seat is not None else None
+    if pointer is None:
+        return None
+    _screen, x, y = pointer.get_position()
+    return (float(x), float(y))
+
+
+def moved_to(event, last):
+    '''The pointer's new spot if a motion event really moved it away from
+    `last`, else None. Rows appearing under a resting pointer send motion
+    too, and that must not count.'''
+    where = (float(int(event.x_root)), float(int(event.y_root)))
+    return where if where != last else None
 
 
 def ctrl_held():

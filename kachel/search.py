@@ -99,11 +99,12 @@ def rank(query, apps):
 
 @dataclass
 class Result:
-    kind: str           # 'calc', 'app', 'web', 'file', or 'problem'
+    kind: str           # 'calc', 'app', 'web', 'file', 'tldr' or 'problem'
     title: str
     subtitle: str
     app: object = None  # for 'app'
-    value: str = None   # the number to copy, the URL, or the file's path
+    value: str = None   # the number to copy, the URL, the file's path, or
+                        # the name of a tldr page
     folder: bool = False   # for 'file': a folder, not a file
 
 
@@ -190,6 +191,13 @@ def file_header(query, count, running=False, truncated=False,
         return f'Keine Dateien für „{query.strip()}“' if query.strip() \
             else 'Keine Dateien'
     return f'Dateien · {count} Treffer'
+
+
+def tldr_header(query, count):
+    '''The line above the names of tldr pages.'''
+    if count == 0:
+        return f'Keine Seite für „{query.strip()}“'
+    return f'tldr · {count} Befehle' if count != 1 else 'tldr · 1 Befehl'
 
 
 def header(query, rows, scope=None):
